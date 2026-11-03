@@ -2,7 +2,7 @@
 
 Telegram-бот с ежедневным дайджестом рынков. Полный текст новости открывается внутри бота; кнопок перехода на сайты изданий нет.
 
-## Запуск
+## Запуск (Windows)
 
 1. В BotFather создайте бота и скопируйте токен.
 2. Скопируйте `.env.example` в `.env` и вставьте токен в `BOT_TOKEN`.
@@ -18,6 +18,169 @@ python main.py
 ```
 
 Проверка без Telegram: `.\.venv\Scripts\python.exe -m unittest discover -s tests`
+
+## Развёртывание на сервере (Linux, от root)
+
+Бот работает через long polling: входящие порты для него не нужны. Нужен исходящий HTTPS к `api.telegram.org`, RSS-лентам и (если задан ключ) к `CVC_BASE_URL`. SQLite и лог пишутся в каталог `data/`. Python 3.11 или новее.
+
+Ниже — Ubuntu/Debian. Команды выполняйте от root.
+
+### 1. Пакеты
+
+```bash
+apt update
+apt install -y python3 python3-venv python3-pip git
+```
+
+Опционально, если нужен лендинг на 80/443:
+
+```bash
+apt install -y nginx
+```
+
+### 2. Код
+
+Скопируйте проект в `/opt/market_news`. Через git:
+
+```bash
+mkdir -p /opt
+cd /opt
+git clone <url-репозитория> market_news
+cd /opt/market_news
+```
+
+Или с машины разработчика (PowerShell, из корня проекта):
+
+```powershell
+scp -r . root@<сервер>:/opt/market_news
+```
+
+На сервере не копируйте `__pycache__`, `.venv` и `data/*.sqlite3-shm` / `data/*.sqlite3-wal`, если переносите уже работающую базу — остановите бота, сделайте checkpoint и копируйте только `data/market_news.sqlite3`.
+
+```bash
+cd /opt/market_news
+mkdir -p data
+chmod 700 /opt/market_news
+```
+
+### 3. Виртуальное окружение
+
+```bash
+cd /opt/market_news
+python3 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
+```
+
+Проверка: `.venv/bin/python -m unittest discover -s tests`
+
+### 4. Конфиг `.env`
+
+```bash
+cd /opt/market_news
+cp .env.example .env
+chmod 600 .env
+nano .env
+```
+
+Обязательно заполните:
+
+- `BOT_TOKEN` — токен из BotFather
+- `BOT_USERNAME` — username бота без `@`
+- `LANDING_BOT_URL` — `https://t.me/<username>`
+- `ADMIN_USER_ID` — Telegram ID админа для `/admin`
+- `CVC_API_KEY` — если нужны перевод и AI-поиск RSS; без ключа бот работает, перевод и AI-discovery выключены
+
+Остальные поля можно оставить как в `.env.example`. Файл `.env` в git не коммитьте.
+
+### 5. systemd
+
+```bash
+cat >/etc/systemd/system/market-news.service <<'EOF'
+[Unit]
+Description=Market News Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/market_news
+ExecStart=/opt/market_news/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now market-news
+systemctl status market-news --no-pager
+```
+
+Логи:
+
+```bash
+journalctl -u market-news -f
+tail -f /opt/market_news/data/bot.log
+```
+
+Полезные команды:
+
+```bash
+systemctl restart market-news
+systemctl stop market-news
+```
+
+В логе при старте должна быть строка `Market News is up`. Если сразу падает — проверьте `BOT_TOKEN` и `journalctl -u market-news -n 100`.
+
+### 6. Лендинг (по желанию)
+
+Статика лежит в `landing/index.html`. Пример nginx:
+
+```nginx
+server {
+    listen 80;
+    server_name example.com;
+    root /opt/market_news/landing;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+```bash
+ln -sf /etc/nginx/sites-available/market-news /etc/nginx/sites-enabled/market-news
+nginx -t && systemctl reload nginx
+```
+
+HTTPS: `apt install -y certbot python3-certbot-nginx` и `certbot --nginx -d example.com`. Ссылка на бота на лендинге должна совпадать с `LANDING_BOT_URL`.
+
+### 7. Обновление кода
+
+```bash
+systemctl stop market-news
+cd /opt/market_news
+# git pull  или  заново скопировать файлы
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m unittest discover -s tests
+systemctl start market-news
+```
+
+### 8. Бэкап SQLite
+
+База: `/opt/market_news/data/market_news.sqlite3`. Копировать файл на лету нельзя надёжно. Сделайте snapshot:
+
+```bash
+apt install -y sqlite3
+mkdir -p /root/backups
+sqlite3 /opt/market_news/data/market_news.sqlite3 ".backup '/root/backups/market_news-$(date +%F).sqlite3'"
+```
+
+Восстановление: `systemctl stop market-news`, подмените `data/market_news.sqlite3`, удалите `-wal`/`-shm` если они остались от старой сессии, `systemctl start market-news`.
 
 ## Команды
 
