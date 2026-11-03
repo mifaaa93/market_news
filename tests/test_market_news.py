@@ -347,6 +347,8 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(_urls(linked), [])
         poisoned = sources_keyboard("ru", [("BBC Business", "https://t.me/channel")])
         self.assertEqual(_urls(poisoned), [])
+        home_actions = _actions(home_keyboard("ru"))
+        self.assertEqual(home_actions[0], "how_it_works")
 
     def test_custom_source_callback_keys_escape_callback_separator(self) -> None:
         key = "custom:480055341:d16040a64e80149b"

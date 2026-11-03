@@ -57,6 +57,7 @@ from keyboards import (
     DIGEST,
     FULL,
     HELP,
+    HOW_IT_WORKS,
     HOME,
     LATEST,
     NEXT,
@@ -80,6 +81,7 @@ from screens import (
     digest_screen,
     full_screen,
     help_screen,
+    how_it_works_screen,
     home_screen,
     latest_screen,
     plus_screen,
@@ -481,6 +483,12 @@ async def on_action(
         await ack(query)
         await _load_if_empty(message, db_user)
         text, markup = await home_screen(_db(), db_user)
+        await show_edit(message, text, markup)
+        return
+
+    if action == HOW_IT_WORKS:
+        await ack(query)
+        text, markup = await how_it_works_screen(db_user)
         await show_edit(message, text, markup)
         return
 

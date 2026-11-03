@@ -16,6 +16,7 @@ from content import (
     render_digest,
     render_full,
     render_help,
+    render_how_it_works,
     render_home,
     render_latest,
     render_plus,
@@ -38,6 +39,7 @@ from keyboards import (
     digest_keyboard,
     full_keyboard,
     help_keyboard,
+    how_it_works_keyboard,
     home_keyboard,
     latest_keyboard,
     plus_keyboard,
@@ -125,6 +127,10 @@ async def settings_screen(user: User) -> Screen:
 
 async def help_screen(user: User) -> Screen:
     return render_help(user.lang), help_keyboard(user.lang)
+
+
+async def how_it_works_screen(user: User) -> Screen:
+    return render_how_it_works(user.lang), how_it_works_keyboard(user.lang)
 
 
 async def sources_screen(database: Database, user: User) -> Screen:

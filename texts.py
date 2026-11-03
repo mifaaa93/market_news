@@ -92,6 +92,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "cat_crypto": "Крипта",
         "cat_markets": "Рынки",
         "btn_digest": "📅 Полный дайджест",
+        "btn_how_it_works": "Как работает продукт",
         "btn_analytics": "📊 Аналитика",
         "btn_latest": "📰 Последние",
         "btn_cats": "🗂 Категории",
@@ -122,6 +123,33 @@ STRINGS: dict[str, dict[str, str]] = {
         "admin_grant": "Выдать подписку",
         "admin_revoke": "Забрать подписку",
         "admin_status": "Проверить статус",
+        "how_it_works": """<b>Как работает Market News</b>
+
+Market News собирает деловые новости из рабочих RSS-лент и показывает их в одном окне Telegram.
+
+<b>Что доступно бесплатно</b>
+• Главные новости и дневной дайджест.
+• Аналитика и разбивка по темам: акции, нефть, макро и крипта.
+• Полный текст доступных материалов внутри бота.
+• Выбор языка интерфейса и времени ежедневной рассылки.
+
+<b>Подписка Plus</b>
+200 Stars на 30 дней.
+• До 100 источников в ленте.
+• До 5 собственных RSS-сайтов.
+• Уведомление в чат по новой статье после её сохранения и подготовки полного текста.
+
+<b>Подписка Pro</b>
+500 Stars на 30 дней.
+• До 500 источников.
+• До 20 собственных RSS-сайтов.
+• Выбранные источники проверяются примерно каждые 5 минут.
+• Уведомления по новым материалам.
+
+<b>Моя лента</b>
+Включайте и выключайте источники в пределах лимита тарифа. Свой сайт добавляется только после проверки RSS и полного текста. Пользовательские источники приватны.
+
+Оплата не закрывает бесплатные новости. Это не инвестиционная рекомендация и не прогноз цены.""",
         "src_investing": "Деловые новости и рынки.",
         "src_cnn": "Новости бизнеса и экономики.",
         "src_yahoo": "Рынки, компании и финансы.",
@@ -246,6 +274,7 @@ ABC News Business, BBC Business, CNBC, OilPrice, CoinDesk, U.S. EIA, Federal Res
         "cat_crypto": "Crypto",
         "cat_markets": "Markets",
         "btn_digest": "📅 Full digest",
+        "btn_how_it_works": "How the product works",
         "btn_analytics": "📊 Analytics",
         "btn_latest": "📰 Latest",
         "btn_cats": "🗂 Categories",
@@ -276,6 +305,33 @@ ABC News Business, BBC Business, CNBC, OilPrice, CoinDesk, U.S. EIA, Federal Res
         "admin_grant": "Grant subscription",
         "admin_revoke": "Revoke subscription",
         "admin_status": "Check status",
+        "how_it_works": """<b>How Market News works</b>
+
+Market News collects business stories from working RSS feeds and shows them in one Telegram window.
+
+<b>Free features</b>
+• Top stories and a daily digest.
+• Analytics by stocks, oil, macro and crypto.
+• Full text of available stories inside the bot.
+• Interface language and daily delivery time settings.
+
+<b>Plus subscription</b>
+200 Stars for 30 days.
+• Up to 100 feed slots.
+• Up to 5 custom RSS sites.
+• A chat notification for a new story after its full text is ready.
+
+<b>Pro subscription</b>
+500 Stars for 30 days.
+• Up to 500 feed slots.
+• Up to 20 custom RSS sites.
+• Selected feeds checked about every 5 minutes.
+• Notifications for new stories.
+
+<b>My feed</b>
+Enable or disable sources within your plan limit. A custom site is saved only after RSS and full-text checks. Custom sources are private.
+
+Payment does not lock free news. This is not investment advice or a price forecast.""",
         "src_investing": "Business and market news.",
         "src_cnn": "Business and economy news.",
         "src_yahoo": "Markets, companies and finance.",
@@ -400,6 +456,7 @@ This is not investment advice and not a price forecast.""",
         "cat_crypto": "العملات الرقمية",
         "cat_markets": "الأسواق",
         "btn_digest": "📅 الموجز الكامل",
+        "btn_how_it_works": "كيف يعمل المنتج",
         "btn_analytics": "📊 التحليل",
         "btn_latest": "📰 الأحدث",
         "btn_cats": "🗂 التصنيفات",
@@ -430,6 +487,33 @@ This is not investment advice and not a price forecast.""",
         "admin_grant": "منح اشتراك",
         "admin_revoke": "سحب اشتراك",
         "admin_status": "فحص الحالة",
+        "how_it_works": """<b>كيف يعمل Market News</b>
+
+يجمع Market News أخبار الأعمال من خلاصات RSS العاملة ويعرضها في نافذة واحدة داخل Telegram.
+
+<b>المزايا المجانية</b>
+• أهم الأخبار والموجز اليومي.
+• تحليل حسب الأسهم والنفط والاقتصاد الكلي والعملات الرقمية.
+• النص الكامل للمواد المتاحة داخل البوت.
+• اختيار اللغة ووقت الإرسال اليومي.
+
+<b>اشتراك Plus</b>
+200 Stars لمدة 30 يومًا.
+• حتى 100 مصدر.
+• حتى 5 مواقع RSS خاصة.
+• إشعار عند جاهزية خبر جديد.
+
+<b>اشتراك Pro</b>
+500 Stars لمدة 30 يومًا.
+• حتى 500 مصدر.
+• حتى 20 موقعًا خاصًا.
+• فحص المصادر المختارة تقريبًا كل 5 دقائق.
+• إشعارات بالمواد الجديدة.
+
+<b>موجزي</b>
+فعّل أو أوقف المصادر ضمن حد خطتك. لا يُحفظ الموقع الخاص إلا بعد فحص RSS والنص الكامل، وتبقى المصادر الخاصة لصاحبها.
+
+الدفع لا يغلق الأخبار المجانية. هذا ليس نصيحة استثمارية ولا توقعًا للسعر.""",
         "src_investing": "أخبار الأعمال والأسواق.",
         "src_cnn": "أخبار الأعمال والاقتصاد.",
         "src_yahoo": "الأسواق والشركات والمال.",

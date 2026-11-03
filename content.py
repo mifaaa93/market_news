@@ -658,6 +658,10 @@ def render_help(lang: str) -> str:
     return fit(t(lang, "help"))
 
 
+def render_how_it_works(lang: str) -> str:
+    return fit(t(lang, "how_it_works"))
+
+
 def render_sources(lang: str, blocks: list[tuple[str, str]], *, allow_link: bool) -> str:
     lines = [f"<b>{html.escape(t(lang, 'sources_title'))}</b>", ""]
     lines.append(html.escape(t(lang, "sources_intro")))
