@@ -640,6 +640,34 @@ class Database:
             )
         return bool(value)
 
+    async def search_sources(self, query: str, limit: int = 8) -> list[Source]:
+        from content import source_search_terms
+
+        needle, host = source_search_terms(query)
+        if len(needle) < 2 and not host:
+            return []
+        pattern = f"%{needle}%"
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT s.*,
+                       COUNT(a.id) AS article_count,
+                       MIN(a.top_rank) AS headline_rank
+                FROM sources s
+                LEFT JOIN articles a ON a.source_id = s.id
+                WHERE s.name ILIKE $1
+                   OR s.url ILIKE $1
+                   OR ($2::text IS NOT NULL AND s.url ILIKE '%' || $2 || '%')
+                GROUP BY s.id
+                ORDER BY MIN(a.top_rank) NULLS LAST, COUNT(a.id) DESC, s.name
+                LIMIT $3
+                """,
+                pattern,
+                host,
+                limit,
+            )
+        return [_source(row) for row in rows]
+
     async def disable_all_sources(self, user_id: int) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(
@@ -928,7 +956,7 @@ class Database:
                 JOIN sources s ON s.id = a.source_id
                 LEFT JOIN translations t ON t.article_id = a.id AND t.lang = $1
                 WHERE t.article_id IS NULL
-                ORDER BY a.published_at DESC, a.id DESC
+                ORDER BY a.top_rank NULLS LAST, a.published_at DESC, a.id DESC
                 LIMIT $2
                 """,
                 lang,

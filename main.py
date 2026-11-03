@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import signal
 import sys
@@ -37,6 +38,7 @@ from keyboards import (
     PLUS,
     PLANS,
     FEED,
+    FIND,
     ADMIN,
     ADMIN_GRANT,
     ADMIN_REVOKE,
@@ -63,6 +65,7 @@ from keyboards import (
     home_keyboard,
     admin_keyboard,
     admin_confirm_keyboard,
+    feed_search_keyboard,
     menu_only,
 )
 from models import CATEGORIES, User
@@ -111,6 +114,10 @@ database: Database | None = None
 class AdminFlow(StatesGroup):
     action = State()
     confirm_revoke = State()
+
+
+class FeedSearch(StatesGroup):
+    waiting = State()
 
 
 def _is_admin(user_id: int) -> bool:
@@ -170,6 +177,18 @@ def _db() -> Database:
     return database
 
 
+async def _enable_catalog_source(user: User, source) -> str:
+    states = await _db().source_states(user.user_id, [source.id])
+    if states.get(source.id):
+        return "already"
+    limit = await _db().source_limits(user.active_plan())
+    active = len(await _db().enabled_source_ids(user.user_id))
+    if active >= limit:
+        return "locked"
+    await _db().set_source_enabled(user.user_id, source.id, True)
+    return "ok"
+
+
 async def _open_article(query: CallbackQuery, user: User, article_id: int, origin: str) -> None:
     article = await _db().get_article(article_id)
     if article is None or query.message is None:
@@ -195,7 +214,8 @@ async def _content(query: CallbackQuery, user: User, builder) -> None:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, db_user: User) -> None:
+async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
+    await state.clear()
     log.info("start %s", db_user.user_id)
     text, markup = await home_screen(_db(), db_user)
     await show_message(message, text, markup)
@@ -349,6 +369,40 @@ async def admin_wait_confirmation(message: Message, db_user: User) -> None:
             t(db_user.lang, "admin_confirm_wait"),
             admin_keyboard(db_user.lang),
         )
+
+
+@router.message(FeedSearch.waiting, F.text)
+async def on_feed_search(message: Message, db_user: User, state: FSMContext) -> None:
+    await state.clear()
+    found = await _db().search_sources(message.text or "", limit=8)
+    if not found:
+        await show_message(
+            message,
+            t(db_user.lang, "source_not_found"),
+            menu_only(db_user.lang),
+        )
+        return
+    if len(found) == 1:
+        source = found[0]
+        result = await _enable_catalog_source(db_user, source)
+        if result == "locked":
+            text, markup = await plans_screen(_db(), db_user)
+            await show_message(message, text, markup)
+            return
+        key = "source_already" if result == "already" else "source_enabled"
+        notice = fill(t(db_user.lang, key), name=source.name)
+        text, markup = await feed_screen(_db(), db_user, 1)
+        await show_message(
+            message,
+            f"<p>{html.escape(notice)}</p>{text}",
+            markup,
+        )
+        return
+    await show_message(
+        message,
+        t(db_user.lang, "source_many"),
+        feed_search_keyboard(db_user.lang, found),
+    )
 
 
 @router.message()
@@ -556,8 +610,36 @@ async def on_action(
         await show_edit(message, text, markup)
         return
 
+    if action == FIND:
+        source = await _db().source(callback_data.i)
+        await state.clear()
+        if source is None:
+            await ack(query)
+            await show_edit(message, t(db_user.lang, "source_not_found"), menu_only(db_user.lang))
+            return
+        result = await _enable_catalog_source(db_user, source)
+        if result == "locked":
+            await ack(query)
+            text, markup = await plans_screen(_db(), db_user)
+            await show_edit(message, text, markup)
+            return
+        key = "source_already" if result == "already" else "source_enabled"
+        await ack(query, fill(t(db_user.lang, key), name=source.name))
+        text, markup = await feed_screen(_db(), db_user, 1)
+        await show_edit(message, text, markup)
+        return
+
     if action == FEED:
         page = 1
+        if callback_data.c == "find":
+            await state.set_state(FeedSearch.waiting)
+            await ack(query)
+            await show_edit(
+                message,
+                t(db_user.lang, "source_search_prompt"),
+                menu_only(db_user.lang),
+            )
+            return
         if callback_data.c in {"off", "star"}:
             page = callback_data.i or 1
             if callback_data.c == "off":

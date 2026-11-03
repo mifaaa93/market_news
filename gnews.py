@@ -112,15 +112,21 @@ def headlines_params(lang: str) -> dict[str, str]:
     }
 
 
-def search_params(lang: str) -> dict[str, str]:
-    return {
+def search_params(
+    lang: str, *, page: int = 1, since: str | None = None
+) -> dict[str, str]:
+    params = {
         "q": config.GNEWS_QUERY,
         "lang": lang,
         "max": str(config.GNEWS_MAX),
         "sortby": "publishedAt",
+        "page": str(max(1, page)),
         "nullable": "image",
         "apikey": config.GNEWS_API_KEY,
     }
+    if since:
+        params["from"] = since
+    return params
 
 
 def mark_origin(
@@ -141,26 +147,40 @@ def mark_origin(
 
 
 async def fetch_lang(
-    session: aiohttp.ClientSession, lang: str, *, kind: str
+    session: aiohttp.ClientSession,
+    lang: str,
+    *,
+    kind: str,
+    page: int = 1,
+    since: str | None = None,
 ) -> dict | None:
     if kind == "top":
         params = headlines_params(lang)
         path = "top-headlines"
     else:
-        params = search_params(lang)
+        params = search_params(lang, page=page, since=since)
         path = "search"
     url = f"{config.GNEWS_BASE_URL}/{path}"
     try:
         async with session.get(url, params=params) as response:
             body = await response.json(content_type=None)
             if response.status != 200:
-                log.warning("gnews %s status %s body=%s", lang, response.status, body)
+                log.warning(
+                    "gnews %s %s page=%s status %s body=%s",
+                    kind,
+                    lang,
+                    page,
+                    response.status,
+                    body,
+                )
                 return None
             if not isinstance(body, dict):
                 return None
+            if body.get("errors"):
+                log.warning("gnews %s %s errors=%s", kind, lang, body.get("errors"))
             return body
     except Exception:
-        log.exception("gnews %s request failed", lang)
+        log.exception("gnews %s %s request failed", kind, lang)
         return None
 
 

@@ -193,6 +193,21 @@ def one_line(value: str) -> str:
     return " ".join((value or "").split())
 
 
+def source_search_terms(raw: str) -> tuple[str, str | None]:
+    text = (raw or "").strip()
+    if not text:
+        return "", None
+    host = None
+    candidate = text if "://" in text else f"https://{text}"
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        parsed = None
+    if parsed and parsed.hostname and "." in parsed.hostname:
+        host = _host(parsed.hostname)
+    return text, host
+
+
 def title_norm(title: str) -> str:
     return re.sub(r"\W+", "", title.casefold(), flags=re.UNICODE)[:180]
 

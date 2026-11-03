@@ -10,6 +10,7 @@ from content import (
     classify,
     classify_topics,
     clean_text,
+    source_search_terms,
     clean_url,
     digest_due,
     is_full_text,
@@ -165,6 +166,13 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(set(both), {"macro", "oil"})
         self.assertGreaterEqual(len(both), 2)
 
+    def test_source_search_terms(self) -> None:
+        name, host = source_search_terms("Reuters")
+        self.assertEqual(name, "Reuters")
+        self.assertIsNone(host)
+        _, host = source_search_terms("https://www.reuters.com/world/asia")
+        self.assertEqual(host, "reuters.com")
+
     def test_title_norm_keeps_non_latin(self) -> None:
         self.assertIn("нефть", title_norm("Цены на нефть выросли"))
         self.assertTrue(len(title_norm("أسعار النفط ترتفع")) >= 8)
@@ -260,6 +268,7 @@ class GNewsTests(unittest.TestCase):
         self.assertIn("stock", params["q"])
         self.assertEqual(params["lang"], "en")
         self.assertEqual(params["sortby"], "publishedAt")
+        self.assertEqual(params["page"], "1")
 
     def test_top_quota_reserve(self) -> None:
         noon = datetime(2026, 3, 1, 12, 30, tzinfo=timezone.utc)

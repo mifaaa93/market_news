@@ -94,7 +94,8 @@ async def poll_gnews(database: Database, kind: str) -> int:
     if not config.GNEWS_API_KEY:
         log.warning("GNEWS_API_KEY is empty, skip poll")
         return 0
-    needed = requests_per_cycle()
+    pages = config.GNEWS_SEARCH_PAGES if kind == "search" else 1
+    needed = pages * requests_per_cycle()
     remaining = await database.quota_remaining()
     if kind == "search":
         floor = top_quota_reserve(utc_now(), await database.meta_get("fetched_top_at"))
@@ -113,26 +114,49 @@ async def poll_gnews(database: Database, kind: str) -> int:
     headers = {"User-Agent": UA, "Accept": "application/json"}
     saved = 0
     used = 0
+    since = None
+    if kind == "search":
+        since = (
+            datetime.now(timezone.utc) - timedelta(hours=24)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-        for index, lang in enumerate(config.GNEWS_LANGS):
-            if not await database.quota_consume(1):
-                log.info("gnews quota exhausted after %s calls", used)
+        stop = False
+        for lang in config.GNEWS_LANGS:
+            if stop:
                 break
-            used += 1
-            if index:
-                await asyncio.sleep(1.1)
-            payload = await fetch_lang(session, lang, kind=kind)
-            if payload is None:
-                continue
-            items = mark_origin(
-                parse_articles(payload, lang),
-                kind,
-                ranked=(kind == "top"),
-            )
-            if kind == "top":
-                saved += await database.replace_top(lang, items)
-            else:
-                saved += await database.ingest_articles(items)
+            for page in range(1, pages + 1):
+                if not await database.quota_consume(1):
+                    log.info("gnews quota exhausted after %s calls", used)
+                    stop = True
+                    break
+                used += 1
+                if used > 1:
+                    await asyncio.sleep(1.1)
+                payload = await fetch_lang(
+                    session, lang, kind=kind, page=page, since=since
+                )
+                if payload is None:
+                    continue
+                items = mark_origin(
+                    parse_articles(payload, lang),
+                    kind,
+                    ranked=(kind == "top"),
+                )
+                batch = 0
+                if kind == "top":
+                    batch = await database.replace_top(lang, items)
+                else:
+                    batch = await database.ingest_articles(items)
+                saved += batch
+                log.info(
+                    "gnews %s lang=%s page=%s total=%s parsed=%s saved=%s",
+                    kind,
+                    lang,
+                    page,
+                    payload.get("totalArticles"),
+                    len(items),
+                    batch,
+                )
     if saved or used:
         key = "fetched_top_at" if kind == "top" else "fetched_at"
         await database.meta_set(key, utc_now_iso())

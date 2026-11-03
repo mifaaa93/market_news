@@ -132,6 +132,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "btn_next_page": "›",
         "btn_feed_off": "✖️ Отключить все",
         "btn_feed_top": "★ Только топ",
+        "btn_feed_find": "🔍 Найти источник",
+        "source_search_prompt": "Пришлите название издания или ссылку. Ищем только среди источников, которые уже есть в боте.",
+        "source_not_found": "Такого источника в боте нет. Можно включить только издания, которые уже появляются в ленте.",
+        "source_enabled": "Источник включён: {name}.",
+        "source_already": "Этот источник уже в вашей ленте: {name}.",
+        "source_many": "Нашлось несколько изданий. Выберите нужное.",
         "btn_read": "📖 Читать",
         "btn_pay_plus": "⭐ Plus · 200 Stars",
         "btn_pay_pro": "💎 Pro · 500 Stars",
@@ -162,7 +168,7 @@ Market News собирает деловые новости с {sources} и пе�
 • Уведомления по новым статьям мгновенно.
 
 <b>Моя лента</b>
-Сначала издания из текущего топа, отмеченные ★. Затем остальные по числу новостей.
+Сначала издания из текущего топа, отмеченные ★. Затем остальные по числу новостей. Можно найти издание по названию или ссылке, если оно уже есть в боте.
 
 Оплата не закрывает бесплатные новости. Это не инвестиционная рекомендация и не прогноз цены.""",
         "src_default": "Источник деловых новостей.",
@@ -300,6 +306,12 @@ Market News присылает деловые новости и короткую
         "btn_next_page": "›",
         "btn_feed_off": "✖️ Disable all",
         "btn_feed_top": "★ Top only",
+        "btn_feed_find": "🔍 Find a source",
+        "source_search_prompt": "Send a publisher name or a link. We only search sources already in the bot.",
+        "source_not_found": "This source is not in the bot. You can only enable publishers that already appear in the feed.",
+        "source_enabled": "Source enabled: {name}.",
+        "source_already": "This source is already in your feed: {name}.",
+        "source_many": "Several publishers matched. Pick one.",
         "btn_read": "📖 Read",
         "btn_pay_plus": "⭐ Plus · 200 Stars",
         "btn_pay_pro": "💎 Pro · 500 Stars",
@@ -330,7 +342,7 @@ Market News collects business news from {sources} and translates it into the int
 • Instant alerts for new stories.
 
 <b>My feed</b>
-Headline publishers come first, marked ★. The rest follow by story count.
+Headline publishers come first, marked ★. The rest follow by story count. You can find a publisher by name or link if it is already in the bot.
 
 Payment does not lock free news. This is not investment advice or a price forecast.""",
         "src_default": "A business news publisher.",
@@ -468,6 +480,12 @@ This is not investment advice and not a price forecast.""",
         "btn_next_page": "›",
         "btn_feed_off": "✖️ إيقاف الكل",
         "btn_feed_top": "★ الأعلى فقط",
+        "btn_feed_find": "🔍 ابحث عن مصدر",
+        "source_search_prompt": "أرسل اسم الناشر أو رابطًا. نبحث فقط بين المصادر الموجودة في البوت.",
+        "source_not_found": "هذا المصدر غير موجود في البوت. يمكن تفعيل الناشرين الذين يظهرون في الموجز فقط.",
+        "source_enabled": "تم تفعيل المصدر: {name}.",
+        "source_already": "هذا المصدر في موجزك بالفعل: {name}.",
+        "source_many": "عُثر على عدة ناشرين. اختر واحدًا.",
         "btn_read": "📖 قراءة",
         "btn_pay_plus": "⭐ Plus · 200 Stars",
         "btn_pay_pro": "💎 Pro · 500 Stars",
@@ -498,7 +516,7 @@ This is not investment advice and not a price forecast.""",
 • تنبيهات فورية بالأخبار الجديدة.
 
 <b>موجزي</b>
-ناشرو العناوين أولًا بعلامة ★، ثم الباقي بعدد الأخبار.
+ناشرو العناوين أولًا بعلامة ★، ثم الباقي بعدد الأخبار. يمكن البحث بالاسم أو الرابط إذا كان المصدر موجودًا في البوت.
 
 الدفع لا يغلق الأخبار المجانية. هذا ليس نصيحة استثمارية ولا توقعًا للسعر.""",
         "src_default": "ناشر أخبار أعمال.",

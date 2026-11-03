@@ -8,7 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import config
 from content import button_label
-from models import CATEGORIES, Article, User
+from models import CATEGORIES, Article, Source, User
 from texts import fill, t, tz_label
 
 HOME = "home"
@@ -33,6 +33,7 @@ PAY = "pay"
 WEEK = "week"
 PLANS = "plans"
 FEED = "feed"
+FIND = "find"
 ADMIN = "admin"
 ADMIN_GRANT = "admin_grant"
 ADMIN_REVOKE = "admin_revoke"
@@ -245,6 +246,7 @@ def feed_keyboard(
         if page < pages:
             nav.append(_btn(t(lang, "btn_next_page"), FEED, 0, str(page + 1)))
         kb.row(*nav)
+    kb.row(_btn(t(lang, "btn_feed_find"), FEED, page, "find"))
     kb.row(
         _btn(t(lang, "btn_feed_off"), FEED, page, "off"),
         _btn(t(lang, "btn_feed_top"), FEED, page, "star"),
@@ -258,6 +260,15 @@ def week_keyboard(lang: str, articles: list[Article]) -> InlineKeyboardMarkup:
     for button in _article_buttons(articles[:12], "w"):
         kb.row(button)
     kb.row(_btn(t(lang, "btn_back"), SETTINGS), _btn(t(lang, "btn_menu"), HOME))
+    return kb.as_markup()
+
+
+def feed_search_keyboard(lang: str, sources: list[Source]) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for source in sources:
+        mark = "★ " if source.headline_rank else ""
+        kb.row(_btn(f"{mark}{source.name}"[:64], FIND, source.id))
+    kb.row(_btn(t(lang, "btn_my_feed"), FEED), _btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()
 
 
