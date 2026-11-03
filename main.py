@@ -166,6 +166,7 @@ class UserMiddleware(BaseMiddleware):
                 from_user.id,
                 from_user.username,
                 from_user.first_name,
+                from_user.language_code,
             )
         return await handler(event, data)
 

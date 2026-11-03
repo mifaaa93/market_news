@@ -91,10 +91,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "cat_macro": "Макро",
         "cat_crypto": "Крипта",
         "cat_markets": "Рынки",
-        "btn_digest": "📅 Полный дайджест",
+        "btn_digest": "📅 Полный дайджест новостей",
         "btn_how_it_works": "💡 Как работает продукт",
-        "btn_analytics": "📊 Аналитика",
-        "btn_latest": "📰 Последние",
+        "btn_analytics": "📊 Аналитика рынков",
+        "btn_latest": "📰 Последние новости",
         "btn_cats": "🗂 Категории",
         "btn_story": "🔥 Новость дня",
         "btn_settings": "⚙️ Настройки",
@@ -273,10 +273,10 @@ ABC News Business, BBC Business, CNBC, OilPrice, CoinDesk, U.S. EIA, Federal Res
         "cat_macro": "Macro",
         "cat_crypto": "Crypto",
         "cat_markets": "Markets",
-        "btn_digest": "📅 Full digest",
+        "btn_digest": "📅 Full news digest",
         "btn_how_it_works": "💡 How the product works",
-        "btn_analytics": "📊 Analytics",
-        "btn_latest": "📰 Latest",
+        "btn_analytics": "📊 Market analytics",
+        "btn_latest": "📰 Latest news",
         "btn_cats": "🗂 Categories",
         "btn_story": "🔥 Story of the day",
         "btn_settings": "⚙️ Settings",
@@ -455,10 +455,10 @@ This is not investment advice and not a price forecast.""",
         "cat_macro": "الاقتصاد الكلي",
         "cat_crypto": "العملات الرقمية",
         "cat_markets": "الأسواق",
-        "btn_digest": "📅 الموجز الكامل",
+        "btn_digest": "📅 الموجز الكامل للأخبار",
         "btn_how_it_works": "💡 كيف يعمل المنتج",
-        "btn_analytics": "📊 التحليل",
-        "btn_latest": "📰 الأحدث",
+        "btn_analytics": "📊 تحليل الأسواق",
+        "btn_latest": "📰 آخر الأخبار",
         "btn_cats": "🗂 التصنيفات",
         "btn_story": "🔥 خبر اليوم",
         "btn_settings": "⚙️ الإعدادات",
@@ -629,6 +629,15 @@ COMMANDS = {
     "uk": COMMANDS_UK,
     "ar": COMMANDS_AR,
 }
+
+
+def interface_lang(language_code: str | None) -> str:
+    """Язык интерфейса при первом запуске: наш код или русский."""
+    raw = (language_code or "").strip().lower().replace("_", "-")
+    primary = raw.split("-", 1)[0]
+    if primary in STRINGS:
+        return primary
+    return "ru"
 
 
 def t(lang: str, key: str) -> str:

@@ -11,6 +11,7 @@ import aiosqlite
 import config
 from content import is_public_article_url, source_hash
 from models import Article, Source, User
+from texts import interface_lang
 
 # Тот же порог, что is_full_text: короткий анонс из RSS пользователю не показываем.
 _FULL_TEXT_SQL = "length(body) >= 900 AND length(body) >= length(summary) + 400"
@@ -209,20 +210,27 @@ class Database:
             raise RuntimeError("database is not connected")
         return self._conn
 
-    async def upsert_user(self, user_id: int, username: str | None, first_name: str | None) -> User:
+    async def upsert_user(
+        self,
+        user_id: int,
+        username: str | None,
+        first_name: str | None,
+        language_code: str | None = None,
+    ) -> User:
+        lang = interface_lang(language_code)
         await self.conn.execute(
             """
             INSERT INTO users (
                 user_id, username, first_name, lang, notifications, digest_hour,
                 timezone, interactions, full_reads, premium_until, created_at,
                 last_digest_on, blocked, plan, source_pending
-            ) VALUES (?, ?, ?, 'ru', 1, ?, ?, 0, 0, NULL, ?, NULL, 0, 'base', 0)
+            ) VALUES (?, ?, ?, ?, 1, ?, ?, 0, 0, NULL, ?, NULL, 0, 'base', 0)
             ON CONFLICT(user_id) DO UPDATE SET
                 username=excluded.username,
                 first_name=excluded.first_name,
                 blocked=0
             """,
-            (user_id, username, first_name, config.DEFAULT_HOUR, config.DEFAULT_TZ, utc_now_iso()),
+            (user_id, username, first_name, lang, config.DEFAULT_HOUR, config.DEFAULT_TZ, utc_now_iso()),
         )
         await self.conn.commit()
         return await self.require_user(user_id)

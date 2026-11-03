@@ -90,9 +90,9 @@ def origin_back(origin: str) -> tuple[str, int, str]:
 def home_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(_btn(t(lang, "btn_how_it_works"), HOW_IT_WORKS))
-    kb.row(_btn(t(lang, "btn_digest"), DIGEST), _btn(t(lang, "btn_analytics"), ANALYTICS))
-    kb.row(_btn(t(lang, "btn_latest"), LATEST), _btn(t(lang, "btn_cats"), CATS))
-    kb.row(_btn(t(lang, "btn_story"), STORY))
+    kb.row(_btn(t(lang, "btn_digest"), DIGEST))
+    kb.row(_btn(t(lang, "btn_analytics"), ANALYTICS), _btn(t(lang, "btn_latest"), LATEST))
+    kb.row(_btn(t(lang, "btn_cats"), CATS), _btn(t(lang, "btn_story"), STORY))
     kb.row(_btn(t(lang, "btn_subscription"), PLANS), _btn(t(lang, "btn_my_feed"), FEED))
     kb.row(_btn(t(lang, "btn_settings"), SETTINGS), _btn(t(lang, "btn_help"), HELP))
     return kb.as_markup()

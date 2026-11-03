@@ -47,7 +47,7 @@ from keyboards import (
 from keyboards import feed_callback_key, feed_source_key
 from models import Article, User
 from screens import full_screen, home_screen
-from texts import ABOUT_AR, ABOUT_EN, ABOUT_RU, COMMANDS, SHORT_AR, SHORT_EN, SHORT_RU, STRINGS, lang_label, t
+from texts import ABOUT_AR, ABOUT_EN, ABOUT_RU, COMMANDS, SHORT_AR, SHORT_EN, SHORT_RU, STRINGS, interface_lang, lang_label, t
 from config import _model_chain
 from translate import _rows_from_content, parse_translation_payload
 from ui import as_rich_html, without_images
@@ -168,6 +168,11 @@ class ContentTests(unittest.TestCase):
         self.assertLessEqual(len(t("ru", "plus_invoice_desc")), 255)
         self.assertLessEqual(len(t("ar", "plus_invoice_desc")), 255)
         self.assertIn("العربية", lang_label("ar"))
+        self.assertEqual(interface_lang("en"), "en")
+        self.assertEqual(interface_lang("en-US"), "en")
+        self.assertEqual(interface_lang("AR"), "ar")
+        self.assertEqual(interface_lang("uk"), "ru")
+        self.assertEqual(interface_lang(None), "ru")
 
     def test_clean_text_strips_links(self) -> None:
         raw = 'Brent moved higher. <a href="https://bit.ly/x">Read more</a> https://t.me/scam'
@@ -419,13 +424,19 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
         user = await self.db.set_hour(7, 18)
         user = await self.db.set_notifications(7, False)
         await self.db.set_blocked(7, True)
-        user = await self.db.upsert_user(7, "ann", "Ann")
+        user = await self.db.upsert_user(7, "ann", "Ann", "ru")
         self.assertEqual(user.lang, "en")
         self.assertEqual(user.digest_hour, 18)
         self.assertFalse(user.notifications)
         self.assertFalse(user.blocked)
         user = await self.db.add_interaction(7, full_read=True)
         self.assertEqual((user.interactions, user.full_reads), (1, 1))
+        english = await self.db.upsert_user(8, "ben", "Ben", "en-GB")
+        self.assertEqual(english.lang, "en")
+        arabic = await self.db.upsert_user(9, "ali", "Ali", "ar")
+        self.assertEqual(arabic.lang, "ar")
+        other = await self.db.upsert_user(10, "max", "Max", "de")
+        self.assertEqual(other.lang, "ru")
 
     async def test_articles_dedup_and_gate(self) -> None:
         first = _article(id=0, guid="same", title="Oil prices rise as OPEC meets in Vienna", summary="First long summary about the oil meeting today.")
