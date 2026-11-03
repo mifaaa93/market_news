@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 data/
+gnews_search_sample.json
 .pytest_cache/
 *.sqlite3
 SERVER.md

@@ -696,18 +696,53 @@ class Database:
         for row in rows:
             await self.set_source_enabled(user_id, int(row["id"]), True)
 
+    async def add_headline_sources(self, user_id: int, limit: int) -> None:
+        enabled = list(await self.enabled_source_ids(user_id))
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT s.id
+                FROM sources s
+                JOIN articles a ON a.source_id = s.id AND a.top_rank IS NOT NULL
+                GROUP BY s.id
+                ORDER BY MIN(a.top_rank) ASC, MIN(s.name)
+                """
+            )
+        for row in rows:
+            source_id = int(row["id"])
+            if source_id in enabled:
+                continue
+            if len(enabled) >= limit:
+                break
+            await self.set_source_enabled(user_id, source_id, True)
+            enabled.append(source_id)
+
     async def set_source_enabled(self, user_id: int, source_id: int, enabled: bool) -> None:
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO user_sources(user_id, source_id, enabled)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (user_id, source_id) DO UPDATE SET enabled=EXCLUDED.enabled
-                """,
-                user_id,
-                source_id,
-                enabled,
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO user_sources(user_id, source_id, enabled)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (user_id, source_id) DO UPDATE SET enabled=EXCLUDED.enabled
+                    """,
+                    user_id,
+                    source_id,
+                    enabled,
+                )
+                if enabled:
+                    await conn.execute(
+                        """
+                        INSERT INTO article_pushes(user_id, article_id, sent_at)
+                        SELECT $1, id, $3
+                        FROM articles
+                        WHERE source_id=$2
+                        ON CONFLICT DO NOTHING
+                        """,
+                        user_id,
+                        source_id,
+                        utc_now(),
+                    )
 
     async def source_states(self, user_id: int, source_ids: list[int]) -> dict[int, bool]:
         enabled = set(await self.enabled_source_ids(user_id))
@@ -1136,6 +1171,7 @@ class Database:
 
     async def extend_plan(self, user_id: int, plan: str, days: int) -> User:
         user = await self.require_user(user_id)
+        first_paid = user.active_plan() == "base" and plan in {"plus", "pro"}
         now = utc_now()
         base = now
         if user.premium_active(now) and user.premium_until:
@@ -1156,7 +1192,10 @@ class Database:
                 now,
                 user_id,
             )
-            return await self._fetch_user_after(conn, user_id)
+            updated = await self._fetch_user_after(conn, user_id)
+        if first_paid:
+            await self.add_headline_sources(user_id, await self.source_limits(plan))
+        return updated
 
     async def revoke_plan(self, user_id: int) -> User:
         async with self.pool.acquire() as conn:
@@ -1199,6 +1238,41 @@ class Database:
         user = await self.revoke_plan(user_id)
         await self.record_admin_action(admin_user_id, user_id, "revoke", None)
         return user
+
+    async def admin_stats(self) -> dict:
+        async with self.pool.acquire() as conn:
+            articles = int(await conn.fetchval("SELECT COUNT(*) FROM articles") or 0)
+            today = int(
+                await conn.fetchval(
+                    "SELECT COUNT(*) FROM articles WHERE first_seen_at::date = CURRENT_DATE"
+                )
+                or 0
+            )
+            cat_rows = await conn.fetch(
+                """
+                SELECT COALESCE(t.category, a.category) AS category, COUNT(*) AS n
+                FROM articles a
+                LEFT JOIN article_topics t ON t.article_id = a.id
+                GROUP BY COALESCE(t.category, a.category)
+                ORDER BY COUNT(*) DESC
+                """
+            )
+            users = int(await conn.fetchval("SELECT COUNT(*) FROM users") or 0)
+            picks = int(
+                await conn.fetchval(
+                    "SELECT COUNT(*) FROM user_sources WHERE enabled"
+                )
+                or 0
+            )
+            catalog = int(await conn.fetchval("SELECT COUNT(*) FROM sources") or 0)
+        return {
+            "articles": articles,
+            "today": today,
+            "categories": [(str(row["category"]), int(row["n"])) for row in cat_rows],
+            "users": users,
+            "picks": picks,
+            "catalog": catalog,
+        }
 
 
 def _user(row: asyncpg.Record) -> User:

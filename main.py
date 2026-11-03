@@ -43,6 +43,7 @@ from keyboards import (
     ADMIN_GRANT,
     ADMIN_REVOKE,
     ADMIN_STATUS,
+    ADMIN_STATS,
     ADMIN_CONFIRM,
     PUSH,
     TZ,
@@ -420,9 +421,32 @@ async def on_action(
         await ack(query)
         return
 
-    if action in {ADMIN, ADMIN_GRANT, ADMIN_REVOKE, ADMIN_STATUS, ADMIN_CONFIRM}:
+    if action in {ADMIN, ADMIN_GRANT, ADMIN_REVOKE, ADMIN_STATUS, ADMIN_STATS, ADMIN_CONFIRM}:
         if not _is_admin(db_user.user_id):
             await ack(query, t(db_user.lang, "unknown"))
+            return
+        if action == ADMIN_STATS:
+            from content import cat_name
+
+            stats = await _db().admin_stats()
+            cats = "<br/>".join(
+                f"{html.escape(cat_name(db_user.lang, name))}: {count}"
+                for name, count in stats["categories"]
+            ) or "—"
+            await ack(query)
+            await show_edit(
+                message,
+                fill(
+                    t(db_user.lang, "admin_stats_text"),
+                    articles=stats["articles"],
+                    today=stats["today"],
+                    categories=cats,
+                    users=stats["users"],
+                    picks=stats["picks"],
+                    catalog=stats["catalog"],
+                ),
+                admin_keyboard(db_user.lang),
+            )
             return
         if action == ADMIN_CONFIRM:
             data = await state.get_data()

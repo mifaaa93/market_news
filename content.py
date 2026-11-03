@@ -719,16 +719,16 @@ def render_settings(user: User) -> str:
 
 
 def render_help(lang: str, names: list[str] | None = None) -> str:
-    return fit(fill(t(lang, "help"), sources=format_publishers(names)))
+    return fit(fill(t(lang, "help"), sources=format_publishers(names, lang=lang)))
 
 
 def render_how_it_works(lang: str, names: list[str] | None = None) -> str:
-    return fit(fill(t(lang, "how_it_works"), sources=format_publishers(names)))
+    return fit(fill(t(lang, "how_it_works"), sources=format_publishers(names, lang=lang)))
 
 
 def render_sources(lang: str, blocks: list[tuple[str, str]], *, allow_link: bool, names: list[str] | None = None) -> str:
     lines = [f"<b>{html.escape(t(lang, 'sources_title'))}</b>", ""]
-    lines.append(html.escape(fill(t(lang, "sources_intro"), sources=format_publishers(names))))
+    lines.append(html.escape(fill(t(lang, "sources_intro"), sources=format_publishers(names, lang=lang))))
     lines.append("")
     for name, about in blocks:
         lines.append(f"<b>{html.escape(name)}</b>")

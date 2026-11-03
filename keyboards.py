@@ -38,6 +38,7 @@ ADMIN = "admin"
 ADMIN_GRANT = "admin_grant"
 ADMIN_REVOKE = "admin_revoke"
 ADMIN_STATUS = "admin_status"
+ADMIN_STATS = "admin_stats"
 ADMIN_CONFIRM = "admin_confirm"
 HOW_IT_WORKS = "how_it_works"
 
@@ -283,6 +284,7 @@ def admin_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb.row(_btn(t(lang, "admin_grant"), ADMIN_GRANT))
     kb.row(_btn(t(lang, "admin_revoke"), ADMIN_REVOKE))
     kb.row(_btn(t(lang, "admin_status"), ADMIN_STATUS))
+    kb.row(_btn(t(lang, "admin_stats"), ADMIN_STATS))
     kb.row(_btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()
 

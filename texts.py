@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-PRESTIGE_SOURCES = (
-    "Reuters",
-    "CNBC",
-    "BBC",
-    "The Guardian",
-    "Yahoo",
-    "Seeking Alpha",
-    "Livemint",
+MAJOR_SOURCES = (
+    "Reuters, BBC, CNBC, The Guardian, Bloomberg, Yahoo Finance, Business Insider"
 )
+_PUBLISHER_TAIL = {
+    "ru": " и тысячи других",
+    "en": " and thousands of others",
+    "ar": " وآلاف غيرها",
+}
 
 
-def format_publishers(names: list[str] | None = None, *, limit: int = 12) -> str:
-    items = [name.strip() for name in (names or []) if name and name.strip()]
-    if len(items) < 3:
-        items = list(PRESTIGE_SOURCES)
-    return ", ".join(items[:limit])
+def format_publishers(names: list[str] | None = None, *, lang: str = "ru", limit: int = 12) -> str:
+    return MAJOR_SOURCES + _PUBLISHER_TAIL.get(lang, _PUBLISHER_TAIL["en"])
 
 
 STRINGS: dict[str, dict[str, str]] = {
@@ -57,7 +53,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "week_intro": "Двенадцать материалов за семь дней, по разным темам.",
         "sources_locked": "Издания, из которых собран дайджест.",
         "sources_open": "Издания, из которых собран дайджест.",
-        "sources_intro": "Сначала издания текущего топа: {sources}. Переходов на внешние сайты здесь нет.",
+        "sources_intro": "{sources}. В ленте сначала издания текущего топа (★). Переходов на внешние сайты здесь нет.",
         "sources_line": "В этом выпуске: {names}.",
         "only_one": "В этой подборке пока одна новость",
         "mail_footer": "Ежедневная рассылка Market News. Час и язык меняются в /settings.",
@@ -95,6 +91,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "admin_user_revoked": "Ваша подписка отозвана администратором. Бесплатный дайджест остаётся доступен.",
         "admin_confirm_wait": "Для отзыва нажмите кнопку подтверждения. Для отмены нажмите «Отмена» или /admin.",
         "admin_expired": "Подтверждение устарело. Откройте /admin заново.",
+        "admin_stats": "📊 Статистика",
+        "admin_stats_text": "<b>Статистика</b>\nНовостей: {articles}\nСегодня: {today}\nПо темам:\n{categories}\nПользователей: {users}\nВключено источников у пользователей: {picks}\nИсточников в каталоге: {catalog}",
         "subscription_status": "Статус: {status}",
         "pay_failed": "Окно оплаты не открылось. Новости по-прежнему доступны через меню.",
         "story_empty": "Новость дня появится, когда лента ответит. Откройте дайджест через минуту.",
@@ -231,7 +229,7 @@ Market News присылает деловые новости и короткую
         "week_intro": "Twelve stories from the last seven days, across topics.",
         "sources_locked": "Publishers behind the digest.",
         "sources_open": "Publishers behind the digest.",
-        "sources_intro": "Headline publishers first: {sources}. There are no external-site buttons here.",
+        "sources_intro": "{sources}. Headline publishers come first in the feed (★). There are no external-site buttons here.",
         "sources_line": "In this edition: {names}.",
         "only_one": "This list has only one story so far",
         "mail_footer": "Daily Market News delivery. Change the hour or the language in /settings.",
@@ -269,6 +267,8 @@ Market News присылает деловые новости и короткую
         "admin_user_revoked": "Your subscription has been revoked by an admin. The free digest is still available.",
         "admin_confirm_wait": "Use the confirmation button to revoke. To cancel, tap Cancel or /admin.",
         "admin_expired": "Confirmation expired. Open /admin again.",
+        "admin_stats": "📊 Stats",
+        "admin_stats_text": "<b>Stats</b>\nStories: {articles}\nToday: {today}\nBy topic:\n{categories}\nUsers: {users}\nEnabled source picks: {picks}\nSources in catalog: {catalog}",
         "subscription_status": "Status: {status}",
         "pay_failed": "The payment window did not open. The news is still available from the menu.",
         "story_empty": "The story of the day will appear once the feed answers. Open the digest in a minute.",
@@ -405,7 +405,7 @@ This is not investment advice and not a price forecast.""",
         "week_intro": "اثنتا عشرة مادة من آخر سبعة أيام، من مواضيع مختلفة.",
         "sources_locked": "الناشرون وراء الموجز.",
         "sources_open": "الناشرون وراء الموجز.",
-        "sources_intro": "ناشرو العناوين أولًا: {sources}. لا توجد أزرار لمواقع خارجية هنا.",
+        "sources_intro": "{sources}. في الموجز يظهر ناشرو العناوين أولًا (★). لا توجد أزرار لمواقع خارجية هنا.",
         "sources_line": "في هذا العدد: {names}.",
         "only_one": "في هذه القائمة خبر واحد حتى الآن",
         "mail_footer": "رسالة Market News اليومية. غيّر الساعة أو اللغة في /settings.",
@@ -443,6 +443,8 @@ This is not investment advice and not a price forecast.""",
         "admin_user_revoked": "سحب المسؤول اشتراكك. يبقى الموجز المجاني متاحًا.",
         "admin_confirm_wait": "استخدم زر التأكيد للسحب، أو إلغاء /admin.",
         "admin_expired": "انتهت صلاحية التأكيد. افتح /admin مجددًا.",
+        "admin_stats": "📊 إحصاءات",
+        "admin_stats_text": "<b>إحصاءات</b>\nالأخبار: {articles}\nاليوم: {today}\nحسب الموضوع:\n{categories}\nالمستخدمون: {users}\nالمصادر المفعّلة لدى المستخدمين: {picks}\nالمصادر في الكتالوج: {catalog}",
         "subscription_status": "الحالة: {status}",
         "pay_failed": "لم تُفتح نافذة الدفع. الأخبار ما زالت متاحة من القائمة.",
         "story_empty": "خبر اليوم يظهر عندما ترد الخلاصة. افتح الموجز بعد دقيقة.",
@@ -567,20 +569,20 @@ TZ_LABELS = {
 }
 
 ABOUT_RU = (
-    "Market News собирает деловые новости с Reuters, CNBC, BBC, The Guardian, "
-    "Yahoo, Seeking Alpha и других изданий. Дайджест раз в день, читать можно в боте. "
+    "Market News собирает деловые новости с Reuters, BBC, CNBC, The Guardian, "
+    "Bloomberg, Yahoo Finance и тысяч других изданий. Дайджест раз в день, читать можно в боте. "
     "Это не инвестиционный совет и не прогноз цен."
 )
 ABOUT_EN = (
-    "Market News collects business news from Reuters, CNBC, BBC, The Guardian, "
-    "Yahoo, Seeking Alpha and other publishers. A digest arrives once a day "
+    "Market News collects business news from Reuters, BBC, CNBC, The Guardian, "
+    "Bloomberg, Yahoo Finance and thousands of others. A digest arrives once a day "
     "and can be read inside the bot. This is not investment advice and not a price forecast."
 )
 SHORT_RU = "Ежедневный дайджест рынков: новости и короткая сводка внутри бота."
 SHORT_EN = "A daily market digest: stories and a short brief inside the bot."
 ABOUT_AR = (
-    "يجمع Market News أخبار الأعمال من Reuters وCNBC وBBC وThe Guardian "
-    "وYahoo وSeeking Alpha وغيرها. يصل الموجز مرة في اليوم ويمكن قراءته داخل البوت. "
+    "يجمع Market News أخبار الأعمال من Reuters وBBC وCNBC وThe Guardian "
+    "وBloomberg وYahoo Finance وآلاف غيرها. يصل الموجز مرة في اليوم ويمكن قراءته داخل البوت. "
     "هذا ليس نصيحة استثمارية ولا توقعًا للأسعار."
 )
 SHORT_AR = "موجز يومي للأسواق: أخبار وملخص قصير داخل البوت."

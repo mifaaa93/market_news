@@ -129,9 +129,11 @@ class ContentTests(unittest.TestCase):
         self.assertIn("Reuters", ABOUT_RU)
         from content import render_how_it_works
         from texts import format_publishers
-        self.assertIn("CNBC", format_publishers(["CNBC", "Reuters", "BBC"]))
-        self.assertIn("Reuters", render_how_it_works("ru", ["Reuters", "CNBC", "BBC"]))
-        self.assertNotIn("{sources}", render_how_it_works("ru", ["Reuters", "CNBC", "BBC"]))
+        self.assertIn("CNBC", format_publishers(lang="ru"))
+        self.assertIn("тысячи", format_publishers(lang="ru"))
+        self.assertNotIn("Hortidaily", render_how_it_works("ru", ["Hortidaily", "ing think", "BBC"]))
+        self.assertIn("Reuters", render_how_it_works("ru"))
+        self.assertNotIn("{sources}", render_how_it_works("ru"))
         self.assertLessEqual(len(t("ru", "plus_invoice_title")), 32)
         self.assertLessEqual(len(t("ar", "plus_invoice_title")), 32)
         self.assertLessEqual(len(t("en", "plus_invoice_desc")), 255)
