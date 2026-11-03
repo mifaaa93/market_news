@@ -44,6 +44,7 @@ from keyboards import (
     settings_keyboard,
     sources_keyboard,
 )
+from keyboards import feed_callback_key, feed_source_key
 from models import Article, User
 from screens import full_screen, home_screen
 from texts import ABOUT_AR, ABOUT_EN, ABOUT_RU, COMMANDS, SHORT_AR, SHORT_EN, SHORT_RU, STRINGS, lang_label, t
@@ -340,11 +341,18 @@ class ContentTests(unittest.TestCase):
         for name in ("digest", "analytics", "settings", "help", "latest", "cats", "story"):
             self.assertIn(name, home_actions)
         opened = full_keyboard("ru", items[0], "d", allow_link=True)
-        self.assertEqual(_urls(opened), [items[0].url])
+        self.assertEqual(_urls(opened), [])
+        self.assertIn("open", _actions(opened))
         linked = sources_keyboard("ru", [("BBC Business", "https://www.bbc.com/news/business")])
-        self.assertEqual(_urls(linked), ["https://www.bbc.com/news/business"])
+        self.assertEqual(_urls(linked), [])
         poisoned = sources_keyboard("ru", [("BBC Business", "https://t.me/channel")])
         self.assertEqual(_urls(poisoned), [])
+
+    def test_custom_source_callback_keys_escape_callback_separator(self) -> None:
+        key = "custom:480055341:d16040a64e80149b"
+        encoded = feed_callback_key(key)
+        self.assertNotIn(":", encoded)
+        self.assertEqual(feed_source_key(encoded), key)
         packed = Act(a="open", i=15, c="kmarkets").pack()
         restored = Act.unpack(packed)
         self.assertEqual((restored.a, restored.i, restored.c), ("open", 15, "kmarkets"))
@@ -473,7 +481,7 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
 
         open_text, open_markup = await full_screen(self.db, user, stored["st"], "d")
         _no_link(open_text)
-        self.assertEqual(_urls(open_markup), [stored["st"].url])
+        self.assertEqual(_urls(open_markup), [])
 
         home_text, home_markup = await home_screen(self.db, user)
         _no_link(home_text)
@@ -525,6 +533,17 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.db.save_payment("ch1", 5, 50))
         user = await self.db.extend_premium(5, 30)
         self.assertTrue(user.premium_active())
+
+    async def test_admin_can_grant_and_revoke_subscription(self) -> None:
+        await self.db.upsert_user(77, None, "Target")
+        user = await self.db.admin_grant(480055341, 77, "pro", 30)
+        self.assertEqual(user.plan, "pro")
+        self.assertTrue(user.premium_active())
+        revoked = await self.db.admin_revoke(480055341, 77)
+        self.assertEqual(revoked.plan, "base")
+        self.assertFalse(revoked.premium_active())
+        with self.assertRaises(PermissionError):
+            await self.db.admin_grant(77, 77, "plus", 30)
 
 
 if __name__ == "__main__":

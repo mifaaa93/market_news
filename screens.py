@@ -19,6 +19,8 @@ from content import (
     render_home,
     render_latest,
     render_plus,
+    render_plans,
+    render_feed,
     render_settings,
     render_sources,
     render_week,
@@ -39,6 +41,8 @@ from keyboards import (
     home_keyboard,
     latest_keyboard,
     plus_keyboard,
+    plans_keyboard,
+    feed_keyboard,
     settings_keyboard,
     sources_keyboard,
     week_keyboard,
@@ -62,14 +66,14 @@ async def _translated(database: Database, articles: list[Article], lang: str) ->
 
 
 async def home_screen(database: Database, user: User) -> Screen:
-    picked = pick_digest(with_summary(await database.recent(60, full_only=True)), 3)
+    picked = pick_digest(with_summary(await database.recent_for_user(user.user_id, 60, full_only=True)), 3)
     items = await _translated(database, picked, user.lang)
     updated = await database.meta_get("fetched_at")
     return render_home(items, user.lang, user.timezone, updated), home_keyboard(user.lang)
 
 
 async def digest_screen(database: Database, user: User, *, mailed: bool = False) -> Screen:
-    picked = pick_digest(with_summary(await database.recent(60, full_only=True)), 7)
+    picked = pick_digest(with_summary(await database.recent_for_user(user.user_id, 60, full_only=True)), 7)
     items = await _translated(database, picked, user.lang)
     updated = await database.meta_get("fetched_at")
     text = render_digest(items, user.lang, user.timezone, updated, mailed=mailed)
@@ -77,13 +81,13 @@ async def digest_screen(database: Database, user: User, *, mailed: bool = False)
 
 
 async def analytics_screen(database: Database, user: User) -> Screen:
-    items = await _translated(database, with_summary(await database.recent(40, full_only=True)), user.lang)
+    items = await _translated(database, with_summary(await database.recent_for_user(user.user_id, 40, full_only=True)), user.lang)
     text = render_analytics(items, user.lang, premium=user.premium_active())
     return text, analytics_keyboard(user.lang)
 
 
 async def latest_screen(database: Database, user: User) -> Screen:
-    items = await _translated(database, await database.recent(8, full_only=True), user.lang)
+    items = await _translated(database, await database.recent_for_user(user.user_id, 8, full_only=True), user.lang)
     return render_latest(items, user.lang), latest_keyboard(user.lang, items)
 
 
@@ -95,7 +99,7 @@ async def categories_screen(database: Database, user: User) -> Screen:
 async def category_screen(database: Database, user: User, category: str) -> Screen:
     if category not in CATEGORIES:
         return await categories_screen(database, user)
-    items = await _translated(database, await database.by_category(category, 6, full_only=True), user.lang)
+    items = await _translated(database, await database.by_category(category, 6, full_only=True, user_id=user.user_id), user.lang)
     return render_category(category, items, user.lang), category_keyboard(user.lang, items, category)
 
 
@@ -111,9 +115,8 @@ async def full_screen(database: Database, user: User, article: Article, origin: 
     if not is_full_text(article):
         return t(user.lang, "no_article"), home_keyboard(user.lang)
     shown = (await _translated(database, [article], user.lang))[0]
-    allow = await external_links_open(database, user)
     text = render_full(shown, user.lang, user.timezone, expanded=is_full_text(shown))
-    return text, full_keyboard(user.lang, shown, origin, allow_link=allow)
+    return text, full_keyboard(user.lang, shown, origin)
 
 
 async def settings_screen(user: User) -> Screen:
@@ -125,36 +128,77 @@ async def help_screen(user: User) -> Screen:
 
 
 async def sources_screen(database: Database, user: User) -> Screen:
-    blocks = [(item.name, t(user.lang, item.about_key)) for item in PUBLISHERS]
-    allow = await external_links_open(database, user)
-    links = [(item.name, item.homepage) for item in PUBLISHERS] if allow else None
-    return render_sources(user.lang, blocks, allow_link=allow), sources_keyboard(user.lang, links)
+    catalog = await database.list_sources()
+    known = {item.key: item for item in PUBLISHERS}
+    blocks = [
+        (
+            item.name,
+            t(user.lang, known[item.key].about_key)
+            if item.key in known
+            else t(user.lang, "src_default"),
+        )
+        for item in catalog
+    ]
+    return render_sources(user.lang, blocks, allow_link=False), sources_keyboard(user.lang, None)
 
 
 async def plus_screen(user: User) -> Screen:
     return render_plus(user), plus_keyboard(user.lang, premium=user.premium_active())
 
 
+async def plans_screen(database: Database, user: User) -> Screen:
+    return render_plans(user, len(await database.list_sources())), plans_keyboard(
+        user.lang, premium=user.premium_active()
+    )
+
+
+async def feed_screen(database: Database, user: User) -> Screen:
+    sources = await database.list_sources(user.user_id)
+    states = await database.source_states(user.user_id)
+    source_limit, custom_limit = await database.source_limits(user.plan if user.premium_active() else "base")
+    active = await database.active_sources(user.user_id)
+    active_count = len(active)
+    custom_count = sum(1 for item in active if item.custom)
+    rows: list[tuple[str, bool, str | None, str]] = []
+    for source in sources:
+        enabled = states.get(source.key, False)
+        locked: str | None = None
+        if not enabled and active_count >= source_limit:
+            locked = t(user.lang, "btn_plan_plus" if user.plan == "base" else "btn_plan_pro")
+        if source.custom and not enabled and custom_count >= custom_limit:
+            locked = t(user.lang, "btn_plan_plus")
+        rows.append((source.key, enabled, locked, source.name))
+    return render_feed(user, rows), feed_keyboard(user.lang, rows)
+
+
 async def week_screen(database: Database, user: User) -> Screen:
     if not user.premium_active():
         return await plus_screen(user)
     picked = pick_digest(
-        with_summary(within_days(await database.recent(80, full_only=True), 7, datetime.now(timezone.utc))),
+        with_summary(within_days(await database.recent_for_user(user.user_id, 80, full_only=True), 7, datetime.now(timezone.utc))),
         12,
     )
     items = await _translated(database, picked, user.lang)
     return render_week(items, user.lang), week_keyboard(user.lang, items)
 
 
-async def articles_for_origin(database: Database, origin: str, lang: str) -> list[Article]:
+async def articles_for_origin(
+    database: Database, origin: str, lang: str, user_id: int | None = None
+) -> list[Article]:
     if origin in {"d", "s"}:
-        items = pick_digest(with_summary(await database.recent(60, full_only=True)), 7)
+        items = pick_digest(
+            with_summary(await database.recent_for_user(user_id, 60, full_only=True)),
+            7,
+        )
     elif origin == "l":
-        items = await database.recent(8, full_only=True)
+        items = await database.recent_for_user(user_id, 8, full_only=True)
     elif origin == "w":
-        items = pick_digest(with_summary(within_days(await database.recent(80, full_only=True), 7)), 12)
+        items = pick_digest(
+            with_summary(within_days(await database.recent_for_user(user_id, 80, full_only=True), 7)),
+            12,
+        )
     elif origin.startswith("k") and origin[1:] in CATEGORIES:
-        items = await database.by_category(origin[1:], 6, full_only=True)
+        items = await database.by_category(origin[1:], 6, full_only=True, user_id=user_id)
     else:
         items = await database.recent(8, full_only=True)
     return await database.apply_translations(items, lang)

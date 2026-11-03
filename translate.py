@@ -145,7 +145,9 @@ async def translate_article(database: Database, article: Article, lang: str) -> 
         await database.save_translations(lang, rows)
 
 
-async def translate_pending(database: Database, *, limit: int = 40) -> int:
+async def translate_pending(
+    database: Database, *, limit: int = 40, full_only: bool = True
+) -> int:
     if not config.CVC_API_KEY or not config.TRANSLATION_LANGS:
         return 0
     async with _LOCK:
@@ -167,7 +169,9 @@ async def translate_pending(database: Database, *, limit: int = 40) -> int:
             return len(rows)
 
         for lang in config.TRANSLATION_LANGS:
-            missing = await database.articles_missing_translation(lang, limit)
+            missing = await database.articles_missing_translation(
+                lang, limit, full_only=full_only
+            )
             short = [article for article in missing if len(article.body) <= 1800]
             long = [article for article in missing if len(article.body) > 1800]
             batches = _chunks(short, 4) + [[article] for article in long]

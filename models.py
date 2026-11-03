@@ -24,6 +24,17 @@ class Article:
     fetched_at: str
     image_url: str = ""
     full_checked: bool = False
+    catalog_visible: bool = True
+
+
+@dataclass(frozen=True)
+class Source:
+    key: str
+    name: str
+    url: str
+    homepage: str
+    owner_user_id: int | None = None
+    custom: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,8 +49,13 @@ class User:
     premium_until: str | None
     last_digest_on: str | None
     blocked: bool
+    plan: str = "base"
+    source_pending: bool = False
+    subscribed_at: str | None = None
 
     def premium_active(self, now: datetime | None = None) -> bool:
+        if self.plan not in {"plus", "pro"} and not self.premium_until:
+            return False
         if not self.premium_until:
             return False
         moment = now or datetime.now(timezone.utc)
@@ -50,3 +66,6 @@ class User:
         if until.tzinfo is None:
             until = until.replace(tzinfo=timezone.utc)
         return until > moment
+
+    def is_pro(self, now: datetime | None = None) -> bool:
+        return self.plan == "pro" and self.premium_active(now)

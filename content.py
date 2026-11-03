@@ -94,12 +94,16 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 # Кнопка источника ведёт только на сайты изданий из ленты, не на случайный домен из RSS.
 _ALLOWED_HOSTS = (
+    "abcnews.com",
+    "abcnews.go.com",
     "bbc.co.uk",
     "bbc.com",
     "cnbc.com",
     "marketwatch.com",
     "oilprice.com",
     "coindesk.com",
+    "eia.gov",
+    "federalreserve.gov",
 )
 
 _BLOCKED_HOSTS = {
@@ -636,7 +640,12 @@ def render_settings(user: User) -> str:
         lines.append(html.escape(t(lang, "settings_push_off")))
     if user.premium_active():
         lines.append(
-            html.escape(fill(t(lang, "plus_active"), until=format_local(user.premium_until, user.timezone)))
+            html.escape(
+                fill(
+                    t(lang, "plus_active"),
+                    until=format_local(user.premium_until, user.timezone),
+                ).replace("Plus", user.plan.title())
+            )
         )
     else:
         lines.append(html.escape(t(lang, "plus_off")))
@@ -651,7 +660,7 @@ def render_help(lang: str) -> str:
 
 def render_sources(lang: str, blocks: list[tuple[str, str]], *, allow_link: bool) -> str:
     lines = [f"<b>{html.escape(t(lang, 'sources_title'))}</b>", ""]
-    lines.append(html.escape(t(lang, "sources_open" if allow_link else "sources_locked")))
+    lines.append(html.escape(t(lang, "sources_intro")))
     lines.append("")
     for name, about in blocks:
         lines.append(f"<b>{html.escape(name)}</b>")
@@ -685,9 +694,45 @@ def render_plus(user: User) -> str:
         lines.append("")
     lines.append(
         html.escape(
-            fill(t(lang, "plus_pitch"), stars=str(config.PLUS_STARS), days=str(config.PLUS_DAYS))
+            fill(
+                t(lang, "plus_pitch"),
+                plus_stars=str(config.PLUS_STARS),
+                plus_limit=str(config.PLUS_SOURCE_LIMIT),
+                pro_stars=str(config.PRO_STARS),
+                pro_limit=str(config.PRO_SOURCE_LIMIT),
+            )
         )
     )
     lines.append("")
     lines.append(f"<i>{html.escape(t(lang, 'disclaimer'))}</i>")
+    return fit("\n".join(lines))
+
+
+def render_plans(user: User, catalog_count: int = 0) -> str:
+    lines = [
+        f"<b>{html.escape(t(user.lang, 'plans_title'))}</b>",
+        "",
+        html.escape(fill(t(user.lang, "plans_text"), catalog=catalog_count)),
+        "",
+        html.escape(
+            fill(
+                t(user.lang, "subscription_status"),
+                status=t(user.lang, f"btn_plan_{user.plan}" if user.plan in {"base", "plus", "pro"} else "btn_plan_base"),
+            )
+        ),
+        f"<i>{html.escape(t(user.lang, 'disclaimer'))}</i>",
+    ]
+    return fit("\n".join(lines))
+
+
+def render_feed(user: User, sources: list[tuple[str, bool, str | None, str]]) -> str:
+    enabled = sum(1 for _, state, _, _ in sources if state)
+    lines = [
+        f"<b>{html.escape(t(user.lang, 'feed_title'))}</b>",
+        "",
+        html.escape(t(user.lang, "feed_intro")),
+        "",
+        html.escape(f"{enabled}"),
+        f"<i>{html.escape(t(user.lang, 'disclaimer'))}</i>",
+    ]
     return fit("\n".join(lines))

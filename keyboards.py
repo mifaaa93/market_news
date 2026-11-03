@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote, unquote
+
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import config
-from content import button_label, is_public_article_url
+from content import button_label
 from models import CATEGORIES, Article, User
 from texts import fill, t, tz_label
 
@@ -31,6 +33,14 @@ TZ = "tz"
 PLUS = "plus"
 PAY = "pay"
 WEEK = "week"
+PLANS = "plans"
+FEED = "feed"
+ADD_SOURCE = "add_source"
+ADMIN = "admin"
+ADMIN_GRANT = "admin_grant"
+ADMIN_REVOKE = "admin_revoke"
+ADMIN_STATUS = "admin_status"
+ADMIN_CONFIRM = "admin_confirm"
 
 
 class Act(CallbackData, prefix="m"):
@@ -51,6 +61,15 @@ def _article_buttons(articles: list[Article], origin: str) -> list[InlineKeyboar
     ]
 
 
+def feed_callback_key(key: str) -> str:
+    """Escape ':' which aiogram uses as the CallbackData field separator."""
+    return quote(key, safe="")
+
+
+def feed_source_key(encoded: str) -> str:
+    return unquote(encoded)
+
+
 def origin_back(origin: str) -> tuple[str, int, str]:
     if origin == "d":
         return DIGEST, 0, "-"
@@ -59,6 +78,8 @@ def origin_back(origin: str) -> tuple[str, int, str]:
     if origin == "w":
         return WEEK, 0, "-"
     if origin == "s":
+        return HOME, 0, "-"
+    if origin == "p":
         return HOME, 0, "-"
     if origin.startswith("k") and origin[1:] in CATEGORIES:
         return CAT, 0, origin[1:]
@@ -70,6 +91,7 @@ def home_keyboard(lang: str) -> InlineKeyboardMarkup:
     kb.row(_btn(t(lang, "btn_digest"), DIGEST), _btn(t(lang, "btn_analytics"), ANALYTICS))
     kb.row(_btn(t(lang, "btn_latest"), LATEST), _btn(t(lang, "btn_cats"), CATS))
     kb.row(_btn(t(lang, "btn_story"), STORY))
+    kb.row(_btn(t(lang, "btn_subscription"), PLANS), _btn(t(lang, "btn_my_feed"), FEED))
     kb.row(_btn(t(lang, "btn_settings"), SETTINGS), _btn(t(lang, "btn_help"), HELP))
     return kb.as_markup()
 
@@ -126,13 +148,11 @@ def article_keyboard(lang: str, article_id: int, origin: str) -> InlineKeyboardM
     return kb.as_markup()
 
 
-def full_keyboard(lang: str, article: Article, origin: str, *, allow_link: bool) -> InlineKeyboardMarkup:
+def full_keyboard(lang: str, article: Article, origin: str, *, allow_link: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(_btn(t(lang, "btn_next"), NEXT, article.id, origin))
-    if allow_link and is_public_article_url(article.url):
-        kb.row(InlineKeyboardButton(text=t(lang, "btn_source"), url=article.url))
     kb.row(
-        _btn(t(lang, "btn_back"), OPEN, article.id, origin),
+        _btn(t(lang, "btn_collapse"), OPEN, article.id, origin),
         _btn(t(lang, "btn_menu"), HOME),
     )
     return kb.as_markup()
@@ -161,9 +181,9 @@ def settings_keyboard(user: User) -> InlineKeyboardMarkup:
     kb.row(*zones[2:])
     if user.premium_active():
         kb.row(_btn(t(lang, "btn_week"), WEEK))
-        kb.row(_btn(t(lang, "btn_plus_renew"), PLUS))
+        kb.row(_btn(t(lang, "btn_subscription"), PLANS))
     else:
-        kb.row(_btn(t(lang, "btn_plus"), PLUS))
+        kb.row(_btn(t(lang, "btn_subscription"), PLANS))
     kb.row(_btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()
 
@@ -178,10 +198,6 @@ def help_keyboard(lang: str) -> InlineKeyboardMarkup:
 
 def sources_keyboard(lang: str, links: list[tuple[str, str]] | None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    if links:
-        for name, url in links:
-            if is_public_article_url(url):
-                kb.row(InlineKeyboardButton(text=name, url=url))
     kb.row(_btn(t(lang, "btn_back"), HELP), _btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()
 
@@ -195,6 +211,26 @@ def plus_keyboard(lang: str, *, premium: bool) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def plans_keyboard(lang: str, premium: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.row(_btn(t(lang, "btn_pay_plus"), PAY, 0, "plus"))
+    kb.row(_btn(t(lang, "btn_pay_pro"), PAY, 0, "pro"))
+    kb.row(_btn(t(lang, "btn_my_feed"), FEED))
+    kb.row(_btn(t(lang, "btn_back"), HOME), _btn(t(lang, "btn_menu"), HOME))
+    return kb.as_markup()
+
+
+def feed_keyboard(lang: str, sources: list[tuple[str, bool, str | None, str]]) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for key, enabled, locked, label in sources:
+        mark = "✓ " if enabled else "○ "
+        suffix = f" · {locked}" if locked else ""
+        kb.row(_btn(f"{mark}{label}{suffix}", FEED, 0, feed_callback_key(key)))
+    kb.row(_btn(t(lang, "btn_add_source"), ADD_SOURCE))
+    kb.row(_btn(t(lang, "btn_subscription"), PLANS), _btn(t(lang, "btn_menu"), HOME))
+    return kb.as_markup()
+
+
 def week_keyboard(lang: str, articles: list[Article]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for button in _article_buttons(articles[:12], "w"):
@@ -205,5 +241,28 @@ def week_keyboard(lang: str, articles: list[Article]) -> InlineKeyboardMarkup:
 
 def menu_only(lang: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    kb.row(_btn(t(lang, "btn_menu"), HOME))
+    return kb.as_markup()
+
+
+def admin_keyboard(lang: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.row(_btn(t(lang, "admin_grant"), ADMIN_GRANT))
+    kb.row(_btn(t(lang, "admin_revoke"), ADMIN_REVOKE))
+    kb.row(_btn(t(lang, "admin_status"), ADMIN_STATUS))
+    kb.row(_btn(t(lang, "btn_menu"), HOME))
+    return kb.as_markup()
+
+
+def admin_confirm_keyboard(lang: str, user_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.row(_btn(t(lang, "admin_confirm"), ADMIN_CONFIRM, user_id))
+    kb.row(_btn(t(lang, "admin_cancel"), ADMIN))
+    return kb.as_markup()
+
+
+def push_keyboard(lang: str, article_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.row(_btn(t(lang, "btn_read"), OPEN, article_id, "p"))
     kb.row(_btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()

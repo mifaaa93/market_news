@@ -10,11 +10,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "disclaimer": "Не является инвестиционной рекомендацией.",
         "source": "Источник",
         "topic": "Тема",
-        "loading": "Собираю свежие заголовки из BBC Business, CNBC, MarketWatch, OilPrice и CoinDesk. Через несколько секунд здесь будут новости дня.",
+        "loading": "Собираю свежие заголовки из рабочих деловых RSS-лент. Через несколько секунд здесь будут новости дня.",
         "empty": "Ленты источников сейчас не ответили. Меню на месте: откройте дайджест чуть позже — бот подтянет материалы сам.",
         "no_summary": "В ленте не было отдельного абзаца. Ниже источник и соседние материалы по теме. Цифры бот не додумывает.",
-        "open_later": "Текст выше сохранён из ленты издания. Ссылка на страницу источника открывается после того, как вы посмотрите несколько материалов здесь.",
-        "links_ready": "Страницу источника можно открыть кнопкой ниже. Это сайт издания.",
+        "open_later": "Текст выше сохранён из ленты издания.",
+        "links_ready": "",
         "full_note": "Это текст публикации {source}. Оценки и цифры — из исходного материала, бот их не добавляет.",
         "related": "Рядом по теме",
         "no_article": "Этого материала уже нет в ленте. Откройте свежий дайджест.",
@@ -27,7 +27,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "settings_title": "Настройки",
         "sources_title": "Источники",
         "week_title": "Недельная подборка",
-        "plus_title": "Market News Plus",
+        "plus_title": "Подписка Market News",
         "plots": "Главные сюжеты",
         "spread": "Как распределились материалы",
         "brief": "Короткий разбор",
@@ -37,8 +37,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "latest_intro": "Свежие публикации по времени выхода.",
         "digest_intro": "Главное за день. Откройте любой пункт — текст останется в боте.",
         "week_intro": "Двенадцать материалов за семь дней, по разным темам.",
-        "sources_locked": "Издания, из которых собран дайджест. Ссылки на их сайты открываются после нескольких прочитанных материалов внутри бота.",
-        "sources_open": "Издания, из которых собран дайджест. Кнопки ниже ведут на их сайты.",
+        "sources_locked": "Издания, из которых собран дайджест.",
+        "sources_open": "Издания, из которых собран дайджест.",
+        "sources_intro": "Рабочие ленты, которые бот использует для новостей. Переходов на внешние сайты здесь нет.",
         "sources_line": "В этом выпуске: {names}.",
         "only_one": "В этой подборке пока одна новость",
         "mail_footer": "Ежедневная рассылка Market News. Час и язык меняются в /settings.",
@@ -46,11 +47,40 @@ STRINGS: dict[str, dict[str, str]] = {
         "settings_push_on": "Рассылка включена, в {hour}:00 ({tz})",
         "settings_push_off": "Рассылка выключена",
         "plus_active": "Plus активен до {until}",
-        "plus_off": "Plus не подключён. Дайджест, аналитика и рассылка бесплатные.",
-        "plus_pitch": "Plus добавляет недельную подборку и более подробную раскладку по темам. Обычный дайджест от этого не зависит и остаётся бесплатным. {days} дней — {stars} Stars, оплата внутри Telegram.",
-        "plus_thanks": "Plus подключён до {until}. Недельная подборка лежит в настройках.",
-        "plus_invoice_title": "Market News Plus",
-        "plus_invoice_desc": "30 дней: недельная подборка и подробная раскладка по темам. Ежедневный дайджест остаётся бесплатным.",
+        "plus_off": "Подписка не подключена. Дайджест, аналитика и полный текст остаются бесплатными.",
+        "plus_pitch": "Лента рынка в одном окне. Базовый тариф — 0 Stars: до 5 лент и дневной дайджест. Plus — {plus_stars} Stars на 30 дней: до {plus_limit} слотов, до 5 своих сайтов и сообщение по новой статье. Pro — {pro_stars} Stars: до {pro_limit} слотов, до 20 своих сайтов и опрос каждые 5 минут.",
+        "plus_thanks": "{plan} подключён до {until}. Дневной дайджест остаётся доступен.",
+        "plus_invoice_title": "Market News {plan}",
+        "plus_invoice_desc": "30 дней: больше источников и сообщение в чат по новой статье.",
+        "plans_title": "Тарифы Market News",
+        "plans_text": "В каталоге сейчас {catalog} рабочих лент.\n\nБазовый — 0 Stars: до 5 включённых лент, дневной дайджест.\n\nPlus — 200 Stars / 30 дней: до 100 слотов, до 5 своих сайтов, сообщение при сохранении материала.\n\nPro — 500 Stars / 30 дней: до 500 слотов, до 20 своих сайтов, опрос выбранных лент каждые 5 минут.",
+        "feed_title": "Моя лента",
+        "feed_intro": "Включите источники в пределах слотов вашего тарифа. В ленте и уведомлениях показываются только материалы с полным текстом.",
+        "feed_locked": "нужен {plan}",
+        "add_source_prompt": "Пришлите https-адрес сайта или RSS. Бот найдёт ленту и проверит полный текст. Если обычный поиск не сработает, адрес сайта и названия ссылок могут быть переданы сервису ИИ для подсказки RSS. На базовом тарифе сначала откройте подписку.",
+        "source_added": "Источник добавлен в вашу ленту: {name}.",
+        "source_failed": "С этого адреса не удалось собрать рабочую ленту. Пришлите другой https-адрес.",
+        "admin_title": "Админка подписок",
+        "admin_intro": "Закрытый раздел.\nВыдача: ID тариф срок_дней — например: 123456789 pro 30.\nОтзыв или статус: просто ID.",
+        "admin_grant": "Выдать подписку",
+        "admin_revoke": "Забрать подписку",
+        "admin_status": "Проверить статус",
+        "admin_prompt_grant": "Отправьте: ID тариф срок_дней\nПример: 123456789 plus 30",
+        "admin_prompt_user": "Отправьте Telegram ID пользователя.",
+        "admin_bad_input": "Не удалось разобрать данные. Попробуйте ещё раз.",
+        "admin_not_found": "Пользователь с таким ID ещё не запускал бота.",
+        "admin_granted": "Готово: {plan} выдан пользователю {user_id} до {until}.",
+        "admin_revoked": "Подписка пользователя {user_id} отозвана.",
+        "admin_status_result": "Пользователь {user_id}: {status}.",
+        "admin_confirm": "Подтвердить отзыв",
+        "admin_cancel": "Отмена",
+        "admin_confirm_question": "Отозвать {status} у пользователя {user_id}? Звёзды не возвращаются автоматически.",
+        "admin_user_granted": "Вам подключён {plan} до {until}.",
+        "admin_user_revoked": "Ваша подписка отозвана администратором. Бесплатный дайджест остаётся доступен.",
+        "admin_confirm_wait": "Для отзыва нажмите кнопку подтверждения. Для отмены нажмите «Отмена» или /admin.",
+        "admin_expired": "Подтверждение устарело. Откройте /admin заново.",
+        "source_duplicate": "Этот адрес уже добавлен в вашу ленту.",
+        "subscription_status": "Статус: {status}",
         "pay_failed": "Окно оплаты не открылось. Новости по-прежнему доступны через меню.",
         "story_empty": "Новость дня появится, когда лента ответит. Откройте дайджест через минуту.",
         "opening": "Открываю полный текст…",
@@ -72,7 +102,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "btn_next": "Следующая",
         "btn_menu": "В меню",
         "btn_back": "Назад",
-        "btn_source": "Открыть источник",
+        "btn_collapse": "Свернуть",
         "btn_push_on": "Включить рассылку",
         "btn_push_off": "Выключить рассылку",
         "btn_plus": "⭐ Market News Plus",
@@ -80,11 +110,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "btn_week": "🗓 Недельная подборка",
         "btn_pay": "Оплатить {stars} Stars",
         "btn_sources": "📚 Источники",
+        "btn_subscription": "⭐ Подписка",
+        "btn_my_feed": "📰 Моя лента",
+        "btn_add_source": "➕ Добавить источник",
+        "btn_read": "Читать",
+        "btn_pay_plus": "Plus · 200 Stars",
+        "btn_pay_pro": "Pro · 500 Stars",
+        "btn_plan_plus": "Plus",
+        "btn_plan_pro": "Pro",
+        "btn_plan_base": "нет подписки",
+        "admin_grant": "Выдать подписку",
+        "admin_revoke": "Забрать подписку",
+        "admin_status": "Проверить статус",
+        "src_investing": "Деловые новости и рынки.",
+        "src_cnn": "Новости бизнеса и экономики.",
+        "src_yahoo": "Рынки, компании и финансы.",
+        "src_default": "Рабочая RSS-лента деловых новостей.",
         "src_bbc": "Деловые новости и компании со всего мира.",
         "src_cnbc": "Рынки, экономика, отчётность и энергия.",
         "src_mw": "Новости рынков и компаний.",
         "src_oil": "Нефть, газ и энергетика.",
         "src_coin": "Криптовалютные рынки.",
+        "src_eia": "Данные и публикации об энергетических рынках США.",
+        "src_fed": "Решения о денежной политике и выступления представителей ФРС.",
+        "src_abc": "Деловые новости и рынки.",
         "help": """<b>Помощь</b>
 
 Market News присылает деловые новости и короткую сводку по рынку.
@@ -98,13 +147,13 @@ Market News присылает деловые новости и короткую
 /help — эта справка
 
 <b>Как читать</b>
-Откройте дайджест, затем новость. «Читать полностью» показывает текст внутри бота. Ссылка на сайт издания появляется после нескольких материалов: сначала виден сам сюжет.
+Откройте дайджест, затем новость. «Читать полностью» показывает текст внутри бота.
 
 <b>Рассылка</b>
 Один раз в день, в час из настроек. Там же её можно выключить.
 
 <b>Откуда новости</b>
-BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
+ABC News Business, BBC Business, CNBC, OilPrice, CoinDesk, U.S. EIA, Federal Reserve.
 
 Это не инвестиционная рекомендация и не прогноз цен.""",
     },
@@ -115,11 +164,11 @@ BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
         "disclaimer": "Not investment advice.",
         "source": "Source",
         "topic": "Topic",
-        "loading": "Collecting fresh headlines from BBC Business, CNBC, MarketWatch, OilPrice and CoinDesk. Today's stories will show up here in a few seconds.",
+        "loading": "Collecting fresh headlines from working business RSS feeds. Today's stories will show up here in a few seconds.",
         "empty": "The source feeds did not answer. The menu still works: open the digest in a minute and the bot will load the stories.",
         "no_summary": "The feed had no standalone paragraph. The source and nearby stories are below. The bot does not invent figures.",
-        "open_later": "The text above is saved from the publisher's feed. The link to the original page opens after you have read several stories here.",
-        "links_ready": "The source page can be opened with the button below. It is the publisher's site.",
+        "open_later": "The text above is saved from the publisher's feed.",
+        "links_ready": "",
         "full_note": "This is the text from {source}. Figures and judgements come from the original piece; the bot does not add any.",
         "related": "Nearby on this topic",
         "no_article": "This story is no longer in the feed. Open a fresh digest.",
@@ -132,7 +181,7 @@ BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
         "settings_title": "Settings",
         "sources_title": "Sources",
         "week_title": "Weekly briefing",
-        "plus_title": "Market News Plus",
+        "plus_title": "Market News Subscription",
         "plots": "Main stories",
         "spread": "How the stories are split",
         "brief": "Short read",
@@ -142,8 +191,9 @@ BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
         "latest_intro": "The newest stories, in the order they were published.",
         "digest_intro": "The main stories of the day. Open any item and the text stays in the bot.",
         "week_intro": "Twelve stories from the last seven days, across topics.",
-        "sources_locked": "Publishers behind the digest. Links to their sites open after you have read several stories inside the bot.",
-        "sources_open": "Publishers behind the digest. The buttons below go to their sites.",
+        "sources_locked": "Publishers behind the digest.",
+        "sources_open": "Publishers behind the digest.",
+        "sources_intro": "Working feeds used by the bot. There are no external-site buttons here.",
         "sources_line": "In this edition: {names}.",
         "only_one": "This list has only one story so far",
         "mail_footer": "Daily Market News delivery. Change the hour or the language in /settings.",
@@ -151,11 +201,40 @@ BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
         "settings_push_on": "Delivery is on, at {hour}:00 ({tz})",
         "settings_push_off": "Delivery is off",
         "plus_active": "Plus is active until {until}",
-        "plus_off": "Plus is not active. The digest, the analytics and the daily delivery are free.",
-        "plus_pitch": "Plus adds a weekly briefing and a longer topic breakdown. The regular digest stays free either way. {days} days — {stars} Stars, paid inside Telegram.",
-        "plus_thanks": "Plus is active until {until}. The weekly briefing is in settings.",
-        "plus_invoice_title": "Market News Plus",
-        "plus_invoice_desc": "30 days: a weekly briefing and a longer topic breakdown. The daily digest stays free.",
+        "plus_off": "No subscription is active. The digest, analytics and full text stay free.",
+        "plus_pitch": "One market feed in one place. Basic: 0 Stars, up to 5 feeds and a daily digest. Plus: {plus_stars} Stars for 30 days, up to {plus_limit} slots, 5 custom sites and a message for each new story. Pro: {pro_stars} Stars, up to {pro_limit} slots, 20 custom sites and a five-minute polling cycle.",
+        "plus_thanks": "{plan} is active until {until}. The daily digest remains available.",
+        "plus_invoice_title": "Market News {plan}",
+        "plus_invoice_desc": "30 days: more sources and a chat message for each new story.",
+        "plans_title": "Market News plans",
+        "plans_text": "There are {catalog} working feeds in the catalog now.\n\nBasic — 0 Stars: up to 5 included feeds, daily digest.\n\nPlus — 200 Stars / 30 days: up to 100 slots, 5 custom sites, message when a story is saved.\n\nPro — 500 Stars / 30 days: up to 500 slots, 20 custom sites, selected feeds polled every 5 minutes.",
+        "feed_title": "My feed",
+        "feed_intro": "Enable sources within your plan's slots. Only stories with full text appear in the feed and alerts.",
+        "feed_locked": "needs {plan}",
+        "add_source_prompt": "Send an https website or RSS address. The bot will verify the feed and a full story. If normal discovery fails, the site address and link names may be sent to an AI provider for RSS suggestions. Basic users should open plans first.",
+        "source_added": "Source added to your feed: {name}.",
+        "source_failed": "Could not build a working feed from this address. Send another https address.",
+        "admin_title": "Subscription admin",
+        "admin_intro": "Private section.\nGrant: ID plan days — for example: 123456789 pro 30.\nRevoke or status: send only the ID.",
+        "admin_grant": "Grant subscription",
+        "admin_revoke": "Revoke subscription",
+        "admin_status": "Check status",
+        "admin_prompt_grant": "Send: ID plan days\nExample: 123456789 plus 30",
+        "admin_prompt_user": "Send the user's Telegram ID.",
+        "admin_bad_input": "Could not parse the data. Try again.",
+        "admin_not_found": "This user has not started the bot yet.",
+        "admin_granted": "Done: {plan} granted to {user_id} until {until}.",
+        "admin_revoked": "Subscription for {user_id} was revoked.",
+        "admin_status_result": "User {user_id}: {status}.",
+        "admin_confirm": "Confirm revocation",
+        "admin_cancel": "Cancel",
+        "admin_confirm_question": "Revoke {status} for user {user_id}? Stars are not automatically refunded.",
+        "admin_user_granted": "Your {plan} subscription is active until {until}.",
+        "admin_user_revoked": "Your subscription has been revoked by an admin. The free digest is still available.",
+        "admin_confirm_wait": "Use the confirmation button to revoke. To cancel, tap Cancel or /admin.",
+        "admin_expired": "Confirmation expired. Open /admin again.",
+        "source_duplicate": "This address is already in your feed.",
+        "subscription_status": "Status: {status}",
         "pay_failed": "The payment window did not open. The news is still available from the menu.",
         "story_empty": "The story of the day will appear once the feed answers. Open the digest in a minute.",
         "opening": "Opening the full text…",
@@ -177,7 +256,7 @@ BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
         "btn_next": "Next",
         "btn_menu": "Menu",
         "btn_back": "Back",
-        "btn_source": "Open source",
+        "btn_collapse": "Collapse",
         "btn_push_on": "Turn delivery on",
         "btn_push_off": "Turn delivery off",
         "btn_plus": "⭐ Market News Plus",
@@ -185,11 +264,30 @@ BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
         "btn_week": "🗓 Weekly briefing",
         "btn_pay": "Pay {stars} Stars",
         "btn_sources": "📚 Sources",
+        "btn_subscription": "⭐ Subscription",
+        "btn_my_feed": "📰 My feed",
+        "btn_add_source": "➕ Add source",
+        "btn_read": "Read",
+        "btn_pay_plus": "Plus · 200 Stars",
+        "btn_pay_pro": "Pro · 500 Stars",
+        "btn_plan_plus": "Plus",
+        "btn_plan_pro": "Pro",
+        "btn_plan_base": "no subscription",
+        "admin_grant": "Grant subscription",
+        "admin_revoke": "Revoke subscription",
+        "admin_status": "Check status",
+        "src_investing": "Business and market news.",
+        "src_cnn": "Business and economy news.",
+        "src_yahoo": "Markets, companies and finance.",
+        "src_default": "A working RSS feed for business news.",
         "src_bbc": "Business news and companies from around the world.",
         "src_cnbc": "Markets, the economy, earnings and energy.",
         "src_mw": "Market and company news.",
         "src_oil": "Oil, gas and energy.",
         "src_coin": "Cryptocurrency markets.",
+        "src_eia": "U.S. energy market reports and data.",
+        "src_fed": "Monetary policy decisions and Federal Reserve speeches.",
+        "src_abc": "Business and market news.",
         "help": """<b>Help</b>
 
 Market News sends business stories and a short market brief.
@@ -203,13 +301,13 @@ Market News sends business stories and a short market brief.
 /help — this note
 
 <b>How to read</b>
-Open the digest, then a story. “Read in full” stays inside the bot. A link to the publisher appears after several stories, so the piece itself comes first.
+Open the digest, then a story. “Read in full” stays inside the bot.
 
 <b>Delivery</b>
 Once a day, at the hour you pick in settings. You can turn it off there.
 
 <b>Where the news comes from</b>
-BBC Business, CNBC, MarketWatch, OilPrice, CoinDesk.
+ABC News Business, BBC Business, CNBC, OilPrice, CoinDesk, U.S. EIA, Federal Reserve.
 
 This is not investment advice and not a price forecast.""",
     },
@@ -220,11 +318,11 @@ This is not investment advice and not a price forecast.""",
         "disclaimer": "ليس نصيحة استثمارية.",
         "source": "المصدر",
         "topic": "الموضوع",
-        "loading": "أجمع العناوين الجديدة من BBC Business وCNBC وMarketWatch وOilPrice وCoinDesk. ستظهر أخبار اليوم هنا خلال ثوانٍ.",
+        "loading": "أجمع العناوين الجديدة من خلاصات RSS العاملة. ستظهر أخبار اليوم هنا خلال ثوانٍ.",
         "empty": "لم تستجب مصادر الأخبار الآن. القائمة تعمل: افتح الموجز بعد دقيقة وسيحمّل البوت المواد.",
         "no_summary": "لم تأتِ في الخلاصة فقرة مستقلة. في الأسفل المصدر ومواد قريبة من الموضوع. البوت لا يخترع أرقامًا.",
-        "open_later": "النص أعلاه محفوظ من خلاصة الناشر. رابط الصفحة الأصلية يفتح بعد قراءة عدة مواد هنا.",
-        "links_ready": "يمكن فتح صفحة المصدر بالزر في الأسفل. هذا موقع الناشر.",
+        "open_later": "النص أعلاه محفوظ من خلاصة الناشر.",
+        "links_ready": "",
         "full_note": "هذا نص من {source}. الأرقام والأحكام من المادة الأصلية، والبوت لا يضيف شيئًا.",
         "related": "مواد قريبة في الموضوع",
         "no_article": "هذه المادة لم تعد في الخلاصة. افتح موجزًا جديدًا.",
@@ -237,7 +335,7 @@ This is not investment advice and not a price forecast.""",
         "settings_title": "الإعدادات",
         "sources_title": "المصادر",
         "week_title": "موجز الأسبوع",
-        "plus_title": "Market News Plus",
+        "plus_title": "اشتراك Market News",
         "plots": "أبرز الموضوعات",
         "spread": "كيف توزعت المواد",
         "brief": "قراءة قصيرة",
@@ -247,8 +345,9 @@ This is not investment advice and not a price forecast.""",
         "latest_intro": "أحدث المواد حسب وقت النشر.",
         "digest_intro": "أهم ما في اليوم. افتح أي بند ويبقى النص داخل البوت.",
         "week_intro": "اثنتا عشرة مادة من آخر سبعة أيام، من مواضيع مختلفة.",
-        "sources_locked": "الناشرون وراء الموجز. روابط مواقعهم تُفتح بعد قراءة عدة مواد داخل البوت.",
-        "sources_open": "الناشرون وراء الموجز. الأزرار في الأسفل تؤدي إلى مواقعهم.",
+        "sources_locked": "الناشرون وراء الموجز.",
+        "sources_open": "الناشرون وراء الموجز.",
+        "sources_intro": "خلاصات RSS العاملة التي يستخدمها البوت. لا توجد أزرار لمواقع خارجية هنا.",
         "sources_line": "في هذا العدد: {names}.",
         "only_one": "في هذه القائمة خبر واحد حتى الآن",
         "mail_footer": "رسالة Market News اليومية. غيّر الساعة أو اللغة في /settings.",
@@ -256,11 +355,40 @@ This is not investment advice and not a price forecast.""",
         "settings_push_on": "الإرسال مفعّل، الساعة {hour}:00 ({tz})",
         "settings_push_off": "الإرسال متوقف",
         "plus_active": "Plus فعّال حتى {until}",
-        "plus_off": "Plus غير مفعّل. الموجز والتحليل والرسالة اليومية مجانية.",
-        "plus_pitch": "يضيف Plus موجزًا أسبوعيًا وتفصيلًا أطول حسب المواضيع. الموجز العادي يبقى مجانيًا. {days} يومًا — {stars} Stars، والدفع داخل تيليغرام.",
-        "plus_thanks": "Plus مفعّل حتى {until}. الموجز الأسبوعي في الإعدادات.",
-        "plus_invoice_title": "Market News Plus",
-        "plus_invoice_desc": "30 يومًا: موجز أسبوعي وتفصيل أطول حسب المواضيع. الموجز اليومي يبقى مجانيًا.",
+        "plus_off": "لا يوجد اشتراك فعّال. الموجز والتحليل والنص الكامل مجانية.",
+        "plus_pitch": "كل أخبار السوق في نافذة واحدة. الأساسي: 0 Stars، حتى 5 مصادر وموجز يومي. Plus: {plus_stars} Stars لمدة 30 يومًا، حتى {plus_limit} مصدرًا و5 مواقع خاصة ورسالة عند حفظ الخبر. Pro: {pro_stars} Stars، حتى {pro_limit} مصدرًا و20 موقعًا وفحص كل 5 دقائق.",
+        "plus_thanks": "اشتراك {plan} فعّال حتى {until}. يبقى الموجز اليومي متاحًا.",
+        "plus_invoice_title": "Market News {plan}",
+        "plus_invoice_desc": "30 يومًا: مصادر أكثر ورسالة عند حفظ كل خبر جديد.",
+        "plans_title": "خطط Market News",
+        "plans_text": "يوجد الآن {catalog} مصدرًا عاملًا في الكتالوج.\n\nالأساسي — 0 Stars: حتى 5 مصادر وموجز يومي.\n\nPlus — 200 Stars / 30 يومًا: حتى 100 مصدر، 5 مواقع خاصة، ورسالة عند حفظ الخبر.\n\nPro — 500 Stars / 30 يومًا: حتى 500 مصدر، 20 موقعًا، وفحص كل 5 دقائق.",
+        "feed_title": "موجزِي",
+        "feed_intro": "فعّل المصادر ضمن عدد الخانات في خطتك. تظهر الأخبار ذات النص الكامل فقط في الموجز والتنبيهات.",
+        "feed_locked": "يتطلب {plan}",
+        "add_source_prompt": "أرسل عنوان موقع أو RSS يبدأ بـ https. سيتحقق البوت من الخلاصة والنص الكامل. إذا فشل البحث المعتاد، قد يُرسل عنوان الموقع وأسماء الروابط إلى مزود الذكاء الاصطناعي لاقتراح RSS. افتح الخطط أولًا في الأساسي.",
+        "source_added": "أُضيف المصدر إلى موجزك: {name}.",
+        "source_failed": "تعذر إنشاء موجز من هذا العنوان. أرسل عنوان https آخر.",
+        "admin_title": "إدارة الاشتراكات",
+        "admin_intro": "قسم خاص.\nالمنح: ID الخطة الأيام — مثال: 123456789 pro 30.\nالسحب أو الحالة: أرسل المعرف فقط.",
+        "admin_grant": "منح اشتراك",
+        "admin_revoke": "سحب اشتراك",
+        "admin_status": "فحص الحالة",
+        "admin_prompt_grant": "أرسل: ID الخطة الأيام\nمثال: 123456789 plus 30",
+        "admin_prompt_user": "أرسل معرف Telegram للمستخدم.",
+        "admin_bad_input": "تعذر فهم البيانات. حاول مرة أخرى.",
+        "admin_not_found": "هذا المستخدم لم يبدأ البوت بعد.",
+        "admin_granted": "تم: مُنحت {plan} للمستخدم {user_id} حتى {until}.",
+        "admin_revoked": "تم سحب اشتراك المستخدم {user_id}.",
+        "admin_status_result": "المستخدم {user_id}: {status}.",
+        "admin_confirm": "تأكيد السحب",
+        "admin_cancel": "إلغاء",
+        "admin_confirm_question": "سحب {status} من المستخدم {user_id}؟ لا تُسترد النجوم تلقائيًا.",
+        "admin_user_granted": "اشتراكك {plan} فعّال حتى {until}.",
+        "admin_user_revoked": "سحب المسؤول اشتراكك. يبقى الموجز المجاني متاحًا.",
+        "admin_confirm_wait": "استخدم زر التأكيد للسحب، أو إلغاء /admin.",
+        "admin_expired": "انتهت صلاحية التأكيد. افتح /admin مجددًا.",
+        "source_duplicate": "هذا العنوان مضاف بالفعل.",
+        "subscription_status": "الحالة: {status}",
         "pay_failed": "لم تُفتح نافذة الدفع. الأخبار ما زالت متاحة من القائمة.",
         "story_empty": "خبر اليوم يظهر عندما ترد الخلاصة. افتح الموجز بعد دقيقة.",
         "opening": "أفتح النص الكامل…",
@@ -282,7 +410,7 @@ This is not investment advice and not a price forecast.""",
         "btn_next": "التالية",
         "btn_menu": "القائمة",
         "btn_back": "رجوع",
-        "btn_source": "فتح المصدر",
+        "btn_collapse": "طي",
         "btn_push_on": "تشغيل الإرسال",
         "btn_push_off": "إيقاف الإرسال",
         "btn_plus": "⭐ Market News Plus",
@@ -290,11 +418,30 @@ This is not investment advice and not a price forecast.""",
         "btn_week": "🗓 موجز الأسبوع",
         "btn_pay": "ادفع {stars} Stars",
         "btn_sources": "📚 المصادر",
+        "btn_subscription": "⭐ الاشتراك",
+        "btn_my_feed": "📰 موجزي",
+        "btn_add_source": "➕ إضافة مصدر",
+        "btn_read": "قراءة",
+        "btn_pay_plus": "Plus · 200 Stars",
+        "btn_pay_pro": "Pro · 500 Stars",
+        "btn_plan_plus": "Plus",
+        "btn_plan_pro": "Pro",
+        "btn_plan_base": "لا اشتراك",
+        "admin_grant": "منح اشتراك",
+        "admin_revoke": "سحب اشتراك",
+        "admin_status": "فحص الحالة",
+        "src_investing": "أخبار الأعمال والأسواق.",
+        "src_cnn": "أخبار الأعمال والاقتصاد.",
+        "src_yahoo": "الأسواق والشركات والمال.",
+        "src_default": "خلاصة RSS عاملة لأخبار الأعمال.",
         "src_bbc": "أخبار الأعمال والشركات من حول العالم.",
         "src_cnbc": "الأسواق والاقتصاد والنتائج والطاقة.",
         "src_mw": "أخبار الأسواق والشركات.",
         "src_oil": "النفط والغاز والطاقة.",
         "src_coin": "أسواق العملات الرقمية.",
+        "src_eia": "بيانات وأخبار أسواق الطاقة الأمريكية.",
+        "src_fed": "قرارات السياسة النقدية وخطابات الاحتياطي الفيدرالي.",
+        "src_abc": "أخبار الأعمال والأسواق.",
         "help": """<b>مساعدة</b>
 
 يرسل Market News أخبار الأعمال وملخصًا قصيرًا للسوق.
@@ -308,13 +455,13 @@ This is not investment advice and not a price forecast.""",
 /help — هذه الملاحظة
 
 <b>كيف تقرأ</b>
-افتح الموجز ثم الخبر. «اقرأ كاملًا» يبقى داخل البوت. رابط الناشر يظهر بعد عدة مواد، فيأتي النص نفسه أولًا.
+افتح الموجز ثم الخبر. «اقرأ كاملًا» يبقى داخل البوت.
 
 <b>الإرسال</b>
 مرة في اليوم، في الساعة التي تختارها من الإعدادات. ويمكن إيقافه هناك.
 
 <b>من أين تأتي الأخبار</b>
-BBC Business وCNBC وMarketWatch وOilPrice وCoinDesk.
+ABC News Business وBBC Business وCNBC وOilPrice وCoinDesk وU.S. EIA وFederal Reserve.
 
 هذا ليس نصيحة استثمارية ولا توقعًا للأسعار.""",
     },
@@ -342,24 +489,21 @@ TZ_LABELS = {
 }
 
 ABOUT_RU = (
-    "Market News собирает деловые новости и раскладывает их по темам: "
-    "акции, нефть, макро и крипта. Дайджест приходит раз в день, читать можно "
-    "прямо в боте. Материалы берутся из BBC Business, CNBC, MarketWatch, "
-    "OilPrice и CoinDesk. Это не инвестиционный совет и не прогноз цен."
+    "Market News собирает деловые новости из рабочих RSS-лент и раскладывает их "
+    "по темам. Дайджест приходит раз в день, читать можно прямо в боте. "
+    "Это не инвестиционный совет и не прогноз цен."
 )
 ABOUT_EN = (
-    "Market News collects business stories and sorts them by topic: "
-    "stocks, oil, macro and crypto. A digest arrives once a day and can be "
-    "read inside the bot. Stories come from BBC Business, CNBC, MarketWatch, "
-    "OilPrice and CoinDesk. This is not investment advice and not a price forecast."
+    "Market News collects business stories from working RSS feeds and sorts them "
+    "by topic. A digest arrives once a day and can be read inside the bot. "
+    "This is not investment advice and not a price forecast."
 )
 SHORT_RU = "Ежедневный дайджест рынков: новости и короткая сводка внутри бота."
 SHORT_EN = "A daily market digest: stories and a short brief inside the bot."
 ABOUT_AR = (
-    "يجمع Market News أخبار الأعمال ويصنفها حسب الموضوع: "
-    "الأسهم والنفط والاقتصاد الكلي والعملات الرقمية. يصل الموجز مرة في اليوم "
-    "ويمكن قراءته داخل البوت. المواد من BBC Business وCNBC وMarketWatch "
-    "وOilPrice وCoinDesk. هذا ليس نصيحة استثمارية ولا توقعًا للأسعار."
+    "يجمع Market News أخبار الأعمال من خلاصات RSS العاملة ويصنفها حسب الموضوع. "
+    "يصل الموجز مرة في اليوم ويمكن قراءته داخل البوت. هذا ليس نصيحة استثمارية "
+    "ولا توقعًا للأسعار."
 )
 SHORT_AR = "موجز يومي للأسواق: أخبار وملخص قصير داخل البوت."
 
