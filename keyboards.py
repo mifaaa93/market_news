@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from urllib.parse import quote, unquote
-
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -35,7 +33,6 @@ PAY = "pay"
 WEEK = "week"
 PLANS = "plans"
 FEED = "feed"
-ADD_SOURCE = "add_source"
 ADMIN = "admin"
 ADMIN_GRANT = "admin_grant"
 ADMIN_REVOKE = "admin_revoke"
@@ -60,15 +57,6 @@ def _article_buttons(articles: list[Article], origin: str) -> list[InlineKeyboar
         _btn(button_label(index, article.title), OPEN, article.id, origin)
         for index, article in enumerate(articles, start=1)
     ]
-
-
-def feed_callback_key(key: str) -> str:
-    """Escape ':' which aiogram uses as the CallbackData field separator."""
-    return quote(key, safe="")
-
-
-def feed_source_key(encoded: str) -> str:
-    return unquote(encoded)
 
 
 def origin_back(origin: str) -> tuple[str, int, str]:
@@ -163,9 +151,9 @@ def full_keyboard(lang: str, article: Article, origin: str, *, allow_link: bool 
 def settings_keyboard(user: User) -> InlineKeyboardMarkup:
     lang = user.lang
     kb = InlineKeyboardBuilder()
-    ru = "✓ Русский" if lang == "ru" else "Русский"
-    en = "✓ English" if lang == "en" else "English"
-    ar = "✓ العربية" if lang == "ar" else "العربية"
+    ru = "✓ 🇷🇺 Русский" if lang == "ru" else "🇷🇺 Русский"
+    en = "✓ 🇬🇧 English" if lang == "en" else "🇬🇧 English"
+    ar = "✓ 🇸🇦 العربية" if lang == "ar" else "🇸🇦 العربية"
     kb.row(_btn(ru, LANG, 0, "ru"), _btn(en, LANG, 0, "en"), _btn(ar, LANG, 0, "ar"))
     push = t(lang, "btn_push_off") if user.notifications else t(lang, "btn_push_on")
     kb.row(_btn(push, PUSH, 0 if user.notifications else 1))
@@ -230,13 +218,37 @@ def plans_keyboard(lang: str, premium: bool = False) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def feed_keyboard(lang: str, sources: list[tuple[str, bool, str | None, str]]) -> InlineKeyboardMarkup:
+def feed_keyboard(
+    lang: str,
+    sources: list[tuple[int, bool, str | None, str, int]],
+    *,
+    page: int,
+    pages: int,
+) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for key, enabled, locked, label in sources:
+    pair: list[InlineKeyboardButton] = []
+    for source_id, enabled, locked, label, count in sources:
         mark = "✓ " if enabled else "○ "
-        suffix = f" · {locked}" if locked else ""
-        kb.row(_btn(f"{mark}{label}{suffix}", FEED, 0, feed_callback_key(key)))
-    kb.row(_btn(t(lang, "btn_add_source"), ADD_SOURCE))
+        suffix = f" · {locked}" if locked else f" · {count}"
+        name = label if len(label) <= 22 else label[:21] + "…"
+        pair.append(_btn(f"{mark}{name}{suffix}", FEED, source_id, str(page)))
+        if len(pair) == 2:
+            kb.row(*pair)
+            pair = []
+    if pair:
+        kb.row(*pair)
+    if pages > 1:
+        nav: list[InlineKeyboardButton] = []
+        if page > 1:
+            nav.append(_btn(t(lang, "btn_prev_page"), FEED, 0, str(page - 1)))
+        nav.append(_btn(f"{page}/{pages}", FEED, 0, str(page)))
+        if page < pages:
+            nav.append(_btn(t(lang, "btn_next_page"), FEED, 0, str(page + 1)))
+        kb.row(*nav)
+    kb.row(
+        _btn(t(lang, "btn_feed_off"), FEED, page, "off"),
+        _btn(t(lang, "btn_feed_top"), FEED, page, "star"),
+    )
     kb.row(_btn(t(lang, "btn_subscription"), PLANS), _btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()
 

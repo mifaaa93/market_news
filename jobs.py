@@ -1,4 +1,4 @@
-"""Фоновое обновление ленты и утренняя рассылка без внешних ссылок."""
+"""Опрос GNews: топ 4 раза в сутки, поиск постоянно, рассылка по выбранным источникам."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
+import aiohttp
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
 import config
-from content import digest_due, pick_digest, render_digest, safe_zone, source_hash, with_summary
-from db import Database
-from feeds import refresh_all, refresh_custom_sources
-from fulltext import fill_full_texts
+from content import digest_due, render_digest, safe_zone, source_hash
+from db import Database, utc_now, utc_now_iso
+from gnews import UA, fetch_lang, mark_origin, parse_articles, requests_per_cycle
 from keyboards import digest_keyboard, push_keyboard
 from translate import translate_pending
 from ui import deliver
@@ -22,71 +22,146 @@ log = logging.getLogger(__name__)
 _REFRESH_LOCK = asyncio.Lock()
 
 
-async def refresh_catalog(database: Database, bot: Bot | None = None) -> None:
-    """Ленты, полные тексты и переводы. Экран читает только то, что уже в базе."""
+def top_quota_reserve(now: datetime | None = None, last_top_at: str | None = None) -> int:
+    moment = now or utc_now()
+    pending = 0
+    last: datetime | None = None
+    if last_top_at:
+        try:
+            last = datetime.strptime(last_top_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            last = None
+    for hour in config.GNEWS_TOP_HOURS:
+        if hour > moment.hour:
+            pending += 1
+        elif hour == moment.hour:
+            already = (
+                last is not None
+                and last.date() == moment.date()
+                and last.hour == moment.hour
+            )
+            if not already:
+                pending += 1
+    return pending * requests_per_cycle()
+
+
+async def refresh_catalog(database: Database, bot: Bot | None = None) -> int:
     if _REFRESH_LOCK.locked():
         log.info("catalog refresh skipped: another refresh is still running")
-        return
-    await _REFRESH_LOCK.acquire()
-    try:
-        await refresh_all(database)
-        await refresh_custom_sources(database, only_plan="plus")
-        await fill_full_texts(database)
-    finally:
-        _REFRESH_LOCK.release()
+        return 0
+    async with _REFRESH_LOCK:
+        saved = await poll_gnews(database, "top")
+        saved += await poll_gnews(database, "search")
+        if saved:
+            log.info("catalog refresh saved=%s", saved)
+        return saved
 
 
-async def refresh_pro(database: Database, bot: Bot | None = None) -> None:
+async def refresh_top(database: Database, bot: Bot | None = None) -> int:
     if _REFRESH_LOCK.locked():
-        log.info("pro refresh skipped: another refresh is still running")
-        return
-    await _REFRESH_LOCK.acquire()
-    try:
-        keys = await database.paid_catalog_keys("pro")
-        if keys:
-            await refresh_all(database, feed_keys=keys)
-        await refresh_custom_sources(database, only_plan="pro")
-        await fill_full_texts(database)
-    finally:
-        _REFRESH_LOCK.release()
+        log.info("top refresh skipped: another refresh is still running")
+        return 0
+    async with _REFRESH_LOCK:
+        saved = await poll_gnews(database, "top")
+        if saved:
+            log.info("top refresh saved=%s", saved)
+        return saved
+
+
+async def refresh_search(database: Database, bot: Bot | None = None) -> int:
+    if _REFRESH_LOCK.locked():
+        log.info("search refresh skipped: another refresh is still running")
+        return 0
+    async with _REFRESH_LOCK:
+        saved = await poll_gnews(database, "search")
+        if saved:
+            log.info("search refresh saved=%s", saved)
+        return saved
 
 
 async def translation_worker(database: Database, bot: Bot | None = None) -> int:
-    """Translate ready full-text articles, then deliver their individual pushes."""
+    sent = await push_new_articles(database, bot)
     translated = 0
     if config.CVC_API_KEY:
-        translated = await translate_pending(
-            database,
-            limit=config.TRANSLATION_BATCH_LIMIT,
-            full_only=True,
-        )
-    sent = await push_new_articles(database, bot)
+        translated = await translate_pending(database, limit=config.TRANSLATION_BATCH_LIMIT)
+    sent += await push_new_articles(database, bot)
     if translated or sent:
         log.info("translation worker: translated=%s pushed=%s", translated, sent)
     return translated
 
 
+async def poll_gnews(database: Database, kind: str) -> int:
+    if not config.GNEWS_API_KEY:
+        log.warning("GNEWS_API_KEY is empty, skip poll")
+        return 0
+    needed = requests_per_cycle()
+    remaining = await database.quota_remaining()
+    if kind == "search":
+        floor = top_quota_reserve(utc_now(), await database.meta_get("fetched_top_at"))
+        if remaining - floor < needed:
+            log.info(
+                "gnews search skipped remaining=%s reserve_top=%s needed=%s",
+                remaining,
+                floor,
+                needed,
+            )
+            return 0
+    elif remaining < needed:
+        log.info("gnews top skipped remaining=%s needed=%s", remaining, needed)
+        return 0
+    timeout = aiohttp.ClientTimeout(total=30)
+    headers = {"User-Agent": UA, "Accept": "application/json"}
+    saved = 0
+    used = 0
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        for index, lang in enumerate(config.GNEWS_LANGS):
+            if not await database.quota_consume(1):
+                log.info("gnews quota exhausted after %s calls", used)
+                break
+            used += 1
+            if index:
+                await asyncio.sleep(1.1)
+            payload = await fetch_lang(session, lang, kind=kind)
+            if payload is None:
+                continue
+            items = mark_origin(
+                parse_articles(payload, lang),
+                kind,
+                ranked=(kind == "top"),
+            )
+            if kind == "top":
+                saved += await database.replace_top(lang, items)
+            else:
+                saved += await database.ingest_articles(items)
+    if saved or used:
+        key = "fetched_top_at" if kind == "top" else "fetched_at"
+        await database.meta_set(key, utc_now_iso())
+        removed = await database.delete_old(config.ARTICLE_KEEP_DAYS)
+        await database.seed_missing_feeds()
+        log.info(
+            "gnews %s used=%s remaining=%s saved=%s pruned=%s",
+            kind,
+            used,
+            await database.quota_remaining(),
+            saved,
+            removed,
+        )
+    return saved
+
+
 async def push_new_articles(database: Database, bot: Bot | None = None) -> int:
-    """Send recent full-text stories without dumping a translation backlog into chat."""
     if bot is None:
         return 0
-    stamp = await database.meta_get("push_checked_at")
-    if stamp is None:
-        await database.meta_set(
-            "push_checked_at",
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        )
-        return 0
-    cutoff = (datetime.now(timezone.utc) - timedelta(
-        minutes=config.PUSH_FRESH_MINUTES
-    )).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # The saved stamp is the first launch of push delivery. Afterwards use a
-    # rolling time window: unprocessed articles stay retryable until they age out.
-    articles = await database.articles_since(max(stamp, cutoff))
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(minutes=config.PUSH_FRESH_MINUTES)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    articles = await database.articles_since(cutoff)
     sent = 0
     per_user: dict[int, int] = {}
     for article in articles:
         for user in await database.list_push_subscribers(article):
+            if not user.notifications:
+                continue
             if per_user.get(user.user_id, 0) >= config.PUSH_PER_USER_PER_CYCLE:
                 continue
             if await database.push_already_sent(user.user_id, article.id):
@@ -95,11 +170,14 @@ async def push_new_articles(database: Database, bot: Bot | None = None) -> int:
                 hashes = await database.translation_hashes(user.lang, [article.id])
                 if hashes.get(article.id) != source_hash(article):
                     continue
-            translated = (await database.apply_translations([article], user.lang))[0]
+            shown = await database.apply_translations([article], user.lang)
+            if not shown:
+                continue
+            item = shown[0]
             text = (
-                f"<b>{translated.title}</b>\n\n"
-                f"{translated.source_name}\n"
-                f"{translated.summary}"
+                f"<b>{item.title}</b>\n\n"
+                f"{item.source_name}\n"
+                f"{item.summary}"
             )
             try:
                 await deliver(bot, user.user_id, text, push_keyboard(user.lang, article.id))
@@ -111,7 +189,7 @@ async def push_new_articles(database: Database, bot: Bot | None = None) -> int:
             except Exception:
                 log.exception("push to %s failed", user.user_id)
     if sent:
-        log.info("sent %s individual story notifications (up to %s per user)", sent, config.PUSH_PER_USER_PER_CYCLE)
+        log.info("sent %s story notifications (up to %s per user)", sent, config.PUSH_PER_USER_PER_CYCLE)
     return sent
 
 
@@ -121,17 +199,17 @@ async def send_digests(bot: Bot, database: Database) -> int:
     if not users:
         return 0
     sent = 0
+    cache: dict[str, list] = {}
     for user in users:
-        picked = pick_digest(
-            with_summary(await database.recent_for_user(user.user_id, 60, full_only=True)),
-            7,
-        )
+        picked = cache.get(user.lang)
+        if picked is None:
+            picked = await database.list_top(user.lang, 10)
+            cache[user.lang] = picked
         if len(picked) < 3:
             continue
-        updated = await database.meta_get("fetched_at")
-        items = await database.apply_translations(picked, user.lang)
-        text = render_digest(items, user.lang, user.timezone, updated, mailed=True)
-        markup = digest_keyboard(user.lang, items)
+        updated = await database.meta_get("fetched_top_at")
+        text = render_digest(picked, user.lang, user.timezone, updated, mailed=True)
+        markup = digest_keyboard(user.lang, picked)
         try:
             await deliver(bot, user.user_id, text, markup)
             local_day = now.astimezone(safe_zone(user.timezone)).date().isoformat()

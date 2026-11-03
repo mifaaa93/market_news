@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import signal
 import sys
-from urllib.parse import urlsplit
 from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -31,9 +29,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import config
 from db import Database
-from feeds import refresh_all
-from jobs import refresh_catalog, refresh_pro, translation_worker
-from jobs import send_digests
+from jobs import refresh_catalog, refresh_search, refresh_top, send_digests, translation_worker
 from keyboards import (
     HOUR,
     LANG,
@@ -41,7 +37,6 @@ from keyboards import (
     PLUS,
     PLANS,
     FEED,
-    ADD_SOURCE,
     ADMIN,
     ADMIN_GRANT,
     ADMIN_REVOKE,
@@ -68,7 +63,6 @@ from keyboards import (
     home_keyboard,
     admin_keyboard,
     admin_confirm_keyboard,
-    feed_source_key,
     menu_only,
 )
 from models import CATEGORIES, User
@@ -104,7 +98,6 @@ from texts import (
     t,
 )
 from ui import ack, deliver, show_edit, show_message
-from rss_discovery import discover_custom_feed
 
 log = logging.getLogger(__name__)
 
@@ -177,16 +170,6 @@ def _db() -> Database:
     return database
 
 
-async def _load_if_empty(message: Message, user: User) -> None:
-    if await _db().count_articles() > 0:
-        return
-    await show_edit(message, t(user.lang, "loading"), home_keyboard(user.lang))
-    try:
-        await refresh_all(_db())
-    except Exception:
-        log.exception("refresh failed")
-
-
 async def _open_article(query: CallbackQuery, user: User, article_id: int, origin: str) -> None:
     article = await _db().get_article(article_id)
     if article is None or query.message is None:
@@ -207,7 +190,6 @@ async def _content(query: CallbackQuery, user: User, builder) -> None:
         return
     await ack(query)
     user = await _db().add_interaction(user.user_id)
-    await _load_if_empty(query.message, user)
     text, markup = await builder(_db(), user)
     await show_edit(query.message, text, markup)
 
@@ -215,16 +197,6 @@ async def _content(query: CallbackQuery, user: User, builder) -> None:
 @router.message(CommandStart())
 async def cmd_start(message: Message, db_user: User) -> None:
     log.info("start %s", db_user.user_id)
-    if await _db().count_articles() == 0:
-        placeholder = await show_message(message, t(db_user.lang, "loading"), home_keyboard(db_user.lang))
-        try:
-            await refresh_all(_db())
-        except Exception:
-            log.exception("start refresh failed")
-        text, markup = await home_screen(_db(), db_user)
-        if placeholder is not None:
-            await show_edit(placeholder, text, markup)
-        return
     text, markup = await home_screen(_db(), db_user)
     await show_message(message, text, markup)
 
@@ -232,17 +204,7 @@ async def cmd_start(message: Message, db_user: User) -> None:
 @router.message(Command("digest", "today"))
 async def cmd_digest(message: Message, db_user: User) -> None:
     db_user = await _db().add_interaction(db_user.user_id)
-    placeholder = None
-    if await _db().count_articles() == 0:
-        placeholder = await show_message(message, t(db_user.lang, "loading"), home_keyboard(db_user.lang))
-        try:
-            await refresh_all(_db())
-        except Exception:
-            log.exception("digest refresh failed")
     text, markup = await digest_screen(_db(), db_user)
-    if placeholder is not None:
-        await show_edit(placeholder, text, markup)
-        return
     await show_message(message, text, markup)
 
 
@@ -261,7 +223,7 @@ async def cmd_settings(message: Message, db_user: User) -> None:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message, db_user: User) -> None:
-    text, markup = await help_screen(db_user)
+    text, markup = await help_screen(_db(), db_user)
     await show_message(message, text, markup)
 
 
@@ -391,35 +353,6 @@ async def admin_wait_confirmation(message: Message, db_user: User) -> None:
 
 @router.message()
 async def on_other(message: Message, db_user: User) -> None:
-    if db_user.source_pending:
-        if not db_user.premium_active():
-            await _db().set_source_pending(db_user.user_id, False)
-            text, markup = await plans_screen(_db(), db_user)
-            await show_message(message, text, markup)
-            return
-        result = await discover_custom_feed(message.text or "")
-        if result is None:
-            await show_message(message, t(db_user.lang, "source_failed"), menu_only(db_user.lang))
-            return
-        name, feed_url, _ = result
-        existing = await _db().source_by_url(db_user.user_id, feed_url)
-        if existing is not None:
-            await _db().set_source_pending(db_user.user_id, False)
-            await show_message(message, t(db_user.lang, "source_duplicate"), menu_only(db_user.lang))
-            return
-        source_limit, custom_limit = await _db().source_limits(db_user.plan)
-        active_sources = await _db().active_sources(db_user.user_id)
-        custom_count = sum(item.custom for item in active_sources)
-        if len(active_sources) >= source_limit or custom_count >= custom_limit:
-            await _db().set_source_pending(db_user.user_id, False)
-            await show_message(message, t(db_user.lang, "source_failed"), menu_only(db_user.lang))
-            return
-        digest = hashlib.sha256(feed_url.encode("utf-8")).hexdigest()[:16]
-        key = f"custom:{db_user.user_id}:{digest}"
-        await _db().add_custom_source(db_user.user_id, key, name, feed_url, urlsplit(message.text).scheme + "://" + urlsplit(message.text).netloc)
-        await _db().set_source_pending(db_user.user_id, False)
-        await show_message(message, fill(t(db_user.lang, "source_added"), name=name), menu_only(db_user.lang))
-        return
     await show_message(message, t(db_user.lang, "unknown"), home_keyboard(db_user.lang))
 
 
@@ -482,14 +415,13 @@ async def on_action(
 
     if action == HOME:
         await ack(query)
-        await _load_if_empty(message, db_user)
         text, markup = await home_screen(_db(), db_user)
         await show_edit(message, text, markup)
         return
 
     if action == HOW_IT_WORKS:
         await ack(query)
-        text, markup = await how_it_works_screen(db_user)
+        text, markup = await how_it_works_screen(_db(), db_user)
         await show_edit(message, text, markup)
         return
 
@@ -526,10 +458,6 @@ async def on_action(
     if action in {OPEN, STORY}:
         if action == STORY:
             picked = await articles_for_origin(_db(), "s", db_user.lang, db_user.user_id)
-            if not picked:
-                await ack(query)
-                await _load_if_empty(message, db_user)
-                picked = await articles_for_origin(_db(), "s", db_user.lang, db_user.user_id)
             if not picked:
                 await ack(query)
                 await show_edit(message, t(db_user.lang, "story_empty"), home_keyboard(db_user.lang))
@@ -578,7 +506,7 @@ async def on_action(
 
     if action == HELP:
         await ack(query)
-        text, markup = await help_screen(db_user)
+        text, markup = await help_screen(_db(), db_user)
         await show_edit(message, text, markup)
         return
 
@@ -629,45 +557,46 @@ async def on_action(
         return
 
     if action == FEED:
-        if callback_data.c != "-":
-            source = await _db().source(feed_source_key(callback_data.c))
-            if source is not None and (
-                source.owner_user_id is None or source.owner_user_id == db_user.user_id
-            ):
-                states = await _db().source_states(db_user.user_id)
-                enabled = states.get(source.key, False)
-                source_limit, _ = await _db().source_limits(db_user.plan if db_user.premium_active() else "base")
-                active = await _db().active_sources(db_user.user_id)
-                _, custom_limit = await _db().source_limits(
-                    db_user.plan if db_user.premium_active() else "base"
-                )
-                custom_active = sum(1 for item in active if item.custom)
-                if not enabled and (
-                    len(active) >= source_limit
-                    or (source.custom and custom_active >= custom_limit)
-                ):
-                    await ack(query, t(db_user.lang, "feed_locked"))
+        page = 1
+        if callback_data.c in {"off", "star"}:
+            page = callback_data.i or 1
+            if callback_data.c == "off":
+                await _db().disable_all_sources(db_user.user_id)
+            else:
+                limit = await _db().source_limits(db_user.active_plan())
+                await _db().enable_headline_sources(db_user.user_id, limit)
+            await ack(query)
+        elif callback_data.i > 0:
+            if callback_data.c.isdigit():
+                page = int(callback_data.c)
+            source = await _db().source(callback_data.i)
+            if source is not None:
+                states = await _db().source_states(db_user.user_id, [source.id])
+                enabled = states.get(source.id, False)
+                limit = await _db().source_limits(db_user.active_plan())
+                active_count = len(await _db().enabled_source_ids(db_user.user_id))
+                if not enabled and active_count >= limit:
+                    await ack(
+                        query,
+                        fill(
+                            t(db_user.lang, "feed_locked"),
+                            plan=t(
+                                db_user.lang,
+                                "btn_plan_plus" if db_user.active_plan() == "base" else "btn_plan_pro",
+                            ),
+                        ),
+                    )
                 else:
-                    await _db().set_source_enabled(db_user.user_id, source.key, not enabled)
+                    await _db().set_source_enabled(db_user.user_id, source.id, not enabled)
                     await ack(query)
             else:
                 await ack(query)
         else:
+            if callback_data.c.isdigit():
+                page = int(callback_data.c)
             await ack(query)
-        text, markup = await feed_screen(_db(), db_user)
+        text, markup = await feed_screen(_db(), db_user, page)
         await show_edit(message, text, markup)
-        return
-
-    if action == ADD_SOURCE:
-        fresh = await _db().require_user(db_user.user_id)
-        if not fresh.premium_active():
-            await ack(query)
-            text, markup = await plans_screen(_db(), fresh)
-            await show_edit(message, text, markup)
-            return
-        await _db().set_source_pending(fresh.user_id, True)
-        await ack(query)
-        await show_message(message, t(fresh.lang, "add_source_prompt"), menu_only(fresh.lang))
         return
 
     if action == PAY:
@@ -787,38 +716,23 @@ def setup_logging() -> None:
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
-    from pathlib import Path
-
-    Path(config.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    config.DATA_PATH.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler(Path(config.DB_PATH).parent / "bot.log", encoding="utf-8"),
+            logging.FileHandler(config.DATA_PATH / "bot.log", encoding="utf-8"),
         ],
     )
     logging.getLogger("aiogram").setLevel(logging.INFO)
     logging.getLogger("apscheduler").setLevel(logging.INFO)
 
 
-async def translation_loop(database: Database, bot: Bot) -> None:
-    """One sequential worker; the delay starts only after a completed batch."""
-    while True:
-        try:
-            await translation_worker(database, bot)
-        except asyncio.CancelledError:
-            log.info("translation worker cancelled during shutdown")
-            raise
-        except Exception:
-            log.exception("translation worker failed")
-        await asyncio.sleep(config.TRANSLATION_WORKER_SECONDS)
-
-
 async def run() -> None:
     global database
     setup_logging()
-    database = Database(config.DB_PATH)
+    database = Database(config.DATABASE_URL)
     await database.connect()
 
     async def startup_sync() -> None:
@@ -833,12 +747,11 @@ async def run() -> None:
     router.callback_query.middleware(UserMiddleware())
     dp.include_router(router)
     startup: asyncio.Task | None = None
+    translation_task: asyncio.Task | None = None
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     loop = asyncio.get_running_loop()
     run_task = asyncio.current_task()
     previous_sigint = signal.getsignal(signal.SIGINT)
-    translation_task: asyncio.Task | None = None
-
     def on_sigint(signum, frame):
         # Do not restore SIG_DFL: a second Ctrl+C must not trigger cmd's batch prompt.
         if dp._stop_signal is not None and dp._running_lock.locked():
@@ -852,21 +765,21 @@ async def run() -> None:
         await _configure_bot(bot)
         startup = asyncio.create_task(startup_sync())
 
-        async def refresh_job() -> None:
+        async def search_job() -> None:
             try:
-                await refresh_catalog(database, bot)
+                await refresh_search(database, bot)
             except asyncio.CancelledError:
-                log.info("scheduled refresh cancelled during shutdown")
+                log.info("search refresh cancelled during shutdown")
             except Exception:
-                log.exception("scheduled refresh failed")
+                log.exception("scheduled search failed")
 
-        async def pro_refresh_job() -> None:
+        async def top_job() -> None:
             try:
-                await refresh_pro(database, bot)
+                await refresh_top(database, bot)
             except asyncio.CancelledError:
-                log.info("pro refresh cancelled during shutdown")
+                log.info("top refresh cancelled during shutdown")
             except Exception:
-                log.exception("pro refresh failed")
+                log.exception("scheduled top failed")
 
         async def digest_job() -> None:
             try:
@@ -877,22 +790,22 @@ async def run() -> None:
                 log.exception("digest job failed")
 
         scheduler.add_job(
-            refresh_job,
+            search_job,
             "interval",
-            minutes=config.RSS_REFRESH_MINUTES,
+            minutes=config.GNEWS_SEARCH_MINUTES,
             coalesce=True,
-            max_instances=2,
-            misfire_grace_time=300,
-            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=config.RSS_REFRESH_MINUTES),
+            max_instances=1,
+            misfire_grace_time=120,
+            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=config.GNEWS_SEARCH_MINUTES),
         )
         scheduler.add_job(
-            pro_refresh_job,
-            "interval",
-            minutes=config.PRO_REFRESH_MINUTES,
+            top_job,
+            "cron",
+            hour=",".join(str(hour) for hour in config.GNEWS_TOP_HOURS),
+            minute=0,
             coalesce=True,
-            max_instances=2,
-            misfire_grace_time=120,
-            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=config.PRO_REFRESH_MINUTES),
+            max_instances=1,
+            misfire_grace_time=600,
         )
         scheduler.add_job(
             digest_job,
@@ -903,7 +816,19 @@ async def run() -> None:
             misfire_grace_time=120,
         )
         scheduler.start()
-        translation_task = asyncio.create_task(translation_loop(database, bot))
+
+        async def translation_loop() -> None:
+            while True:
+                try:
+                    await translation_worker(database, bot)
+                except asyncio.CancelledError:
+                    log.info("translation worker cancelled during shutdown")
+                    raise
+                except Exception:
+                    log.exception("translation worker failed")
+                await asyncio.sleep(config.TRANSLATION_WORKER_SECONDS)
+
+        translation_task = asyncio.create_task(translation_loop())
         log.info("Market News is up, articles=%s", await database.count_articles())
         await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot, handle_signals=False)
@@ -911,16 +836,16 @@ async def run() -> None:
         try:
             if scheduler.running:
                 scheduler.shutdown(wait=False)
-            if startup is not None:
-                startup.cancel()
-                try:
-                    await startup
-                except asyncio.CancelledError:
-                    pass
             if translation_task is not None:
                 translation_task.cancel()
                 try:
                     await translation_task
+                except asyncio.CancelledError:
+                    pass
+            if startup is not None:
+                startup.cancel()
+                try:
+                    await startup
                 except asyncio.CancelledError:
                     pass
             await database.close()
@@ -935,6 +860,9 @@ async def run() -> None:
 def main() -> None:
     if not config.BOT_TOKEN:
         print("Нет токена. Создайте файл .env и укажите BOT_TOKEN. Образец — .env.example")
+        raise SystemExit(1)
+    if not config.DATABASE_URL:
+        print("Нет DATABASE_URL. Задайте его в .env или через docker compose.")
         raise SystemExit(1)
     try:
         asyncio.run(run())

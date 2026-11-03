@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import config
 from models import CATEGORIES, Article, User
-from texts import cat_name, fill, lang_label, t, tz_label
+from texts import cat_name, fill, format_publishers, lang_label, t, tz_label
 
 _TAG = re.compile(r"<[^>]+>")
 _SCRIPT = re.compile(r"(?is)<(script|style).*?>.*?</\1>")
@@ -26,15 +26,25 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "crypto",
         (
             r"\bbitcoin\b",
-            r"\bcrypto\b",
-            r"\bcryptocurrency\b",
-            r"\bethereum\b",
             r"\bbtc\b",
+            r"\bethereum\b",
             r"\beth\b",
+            r"\bcrypto\b",
+            r"\bcryptocurrenc",
             r"\bblockchain\b",
             r"\bdefi\b",
+            r"\bstablecoin",
+            r"\btoken\b",
+            r"\bsolana\b",
+            r"\bxrp\b",
             r"\bbinance\b",
             r"\bcoinbase\b",
+            r"\bspot etf\b",
+            r"\bcrypto etf\b",
+            r"биткоин",
+            r"крипт",
+            r"эфир",
+            r"блокчейн",
         ),
     ),
     (
@@ -44,10 +54,18 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             r"\bcrude\b",
             r"\bbrent\b",
             r"\bwti\b",
-            r"\bopec\b",
+            r"\bopec\+?",
             r"\bnatural gas\b",
             r"\blng\b",
             r"\bpetroleum\b",
+            r"\bgasoline\b",
+            r"\benergy prices\b",
+            r"\boilfield\b",
+            r"\boil price",
+            r"нефть",
+            r"нефте",
+            r"опек",
+            r"баррел",
         ),
     ),
     (
@@ -59,20 +77,26 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             r"\bcentral bank\b",
             r"\bfederal reserve\b",
             r"\bthe fed\b",
-            r"\bfed\b",
+            r"\bfomc\b",
+            r"\bpowell\b",
             r"\becb\b",
-            r"\binterest rate\b",
+            r"\binterest rates?\b",
             r"\brate cut\b",
             r"\brate hike\b",
-            r"\btariff\b",
+            r"\btariffs?\b",
             r"\brecession\b",
-            r"\bbond yield\b",
-            r"\btreasury\b",
+            r"\bbond yields?\b",
+            r"\btreasur(?:y|ies)\b",
             r"\bjobs report\b",
             r"\bpayrolls?\b",
             r"\bretail sales\b",
             r"\bconsumer prices\b",
             r"\bcpi\b",
+            r"\bpce\b",
+            r"\bmonetary policy\b",
+            r"инфляц",
+            r"ключев",
+            r"ставк",
         ),
     ),
     (
@@ -80,30 +104,23 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         (
             r"\bstocks?\b",
             r"\bshares?\b",
-            r"\bequity\b",
-            r"\bequities\b",
+            r"\bequit(?:y|ies)\b",
             r"\bnasdaq\b",
             r"\bs&p\b",
-            r"\bdow\b",
+            r"\bdow jones\b",
+            r"\bnyse\b",
             r"\bearnings\b",
             r"\bipo\b",
             r"\bwall street\b",
+            r"\bdividend\b",
+            r"\bbuyback\b",
+            r"\bguidance\b",
+            r"\bstock market\b",
+            r"акци",
+            r"индекс",
+            r"бирж",
         ),
     ),
-)
-
-# Кнопка источника ведёт только на сайты изданий из ленты, не на случайный домен из RSS.
-_ALLOWED_HOSTS = (
-    "abcnews.com",
-    "abcnews.go.com",
-    "bbc.co.uk",
-    "bbc.com",
-    "cnbc.com",
-    "marketwatch.com",
-    "oilprice.com",
-    "coindesk.com",
-    "eia.gov",
-    "federalreserve.gov",
 )
 
 _BLOCKED_HOSTS = {
@@ -177,7 +194,7 @@ def one_line(value: str) -> str:
 
 
 def title_norm(title: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", title.lower())[:180]
+    return re.sub(r"\W+", "", title.casefold(), flags=re.UNICODE)[:180]
 
 
 def clip(value: str, limit: int) -> str:
@@ -218,16 +235,33 @@ def fit(text: str, limit: int = 3800) -> str:
     return cut.rstrip() + "\n…"
 
 
+def _topic_scores(title: str, body: str) -> dict[str, int]:
+    title_low = title.lower()
+    body_low = body.lower()
+    scores: dict[str, int] = {}
+    for category, patterns in _RULES:
+        score = 0
+        for pattern in patterns:
+            if re.search(pattern, title_low):
+                score += 2
+            elif re.search(pattern, body_low):
+                score += 1
+        scores[category] = score
+    return scores
+
+
+def classify_topics(title: str, body: str = "") -> list[str]:
+    scores = _topic_scores(title, body)
+    ranked = [category for category, score in scores.items() if score > 0]
+    ranked.sort(key=lambda category: (-scores[category], CATEGORIES.index(category)))
+    return ranked or ["markets"]
+
+
 def classify(text: str) -> str:
-    low = text.lower()
-    scores = {
-        category: sum(1 for pattern in patterns if re.search(pattern, low))
-        for category, patterns in _RULES
-    }
-    best = max(scores, key=lambda category: scores[category])
-    if scores[best] == 0:
-        return "markets"
-    return best
+    lines = text.split("\n", 1)
+    title = lines[0]
+    body = lines[1] if len(lines) > 1 else ""
+    return classify_topics(title, body)[0]
 
 
 def resolve_category(text: str, hint: str | None) -> str:
@@ -237,6 +271,16 @@ def resolve_category(text: str, hint: str | None) -> str:
     if hint in CATEGORIES:
         return hint
     return "markets"
+
+
+def topic_label(article: Article, lang: str) -> str:
+    cats = article.categories or (article.category,)
+    names = []
+    for category in cats:
+        label = cat_name(lang, category)
+        if label not in names:
+            names.append(label)
+    return " · ".join(names)
 
 
 def _host(hostname: str) -> str:
@@ -264,7 +308,7 @@ def is_public_article_url(url: str) -> bool:
         return False
     if host in _BLOCKED_HOSTS or host.endswith(".t.me"):
         return False
-    return any(host == suffix or host.endswith("." + suffix) for suffix in _ALLOWED_HOSTS)
+    return True
 
 
 def clean_url(url: str) -> str:
@@ -353,6 +397,10 @@ def digest_due(user: User, now_utc: datetime) -> bool:
     if user.last_digest_on == local.date().isoformat():
         return False
     return user.digest_hour <= local.hour <= user.digest_hour + 1
+
+
+def is_full_text(article: Article) -> bool:
+    return bool(article.title.strip() and (article.body.strip() or article.summary.strip()))
 
 
 def source_hash(article: Article) -> str:
@@ -447,12 +495,12 @@ def _paragraphs(text: str) -> str:
 
 def _story_block(article: Article, lang: str, limit: int, *, index: int | None) -> str:
     title = article.title if index is None else f"{index}. {article.title}"
-    parts = [f"<h3>{_e(title)}</h3>", _figure(article)]
+    parts = [f"<h3>{_e(title)}</h3>"]
     snippet = plain_summary(article)
     if snippet:
         parts.append(f"<p>{_e(clip(snippet, limit))}</p>")
     parts.append(
-        f"<footer>{_e(cat_name(lang, article.category))} · {_e(article.source_name)}</footer>"
+        f"<footer>{_e(topic_label(article, lang))} · {_e(article.source_name)}</footer>"
     )
     return "".join(parts)
 
@@ -516,7 +564,8 @@ def render_analytics(items: list[Article], lang: str, *, premium: bool) -> str:
     digest = pick_digest(window, 4)
     counts: dict[str, int] = {}
     for article in window:
-        counts[article.category] = counts.get(article.category, 0) + 1
+        for category in article.categories or (article.category,):
+            counts[category] = counts.get(category, 0) + 1
     parts.append(f"<h2>{_e(t(lang, 'plots'))}</h2>")
     for article in digest:
         parts.append(_story_block(article, lang, 160, index=None))
@@ -566,7 +615,7 @@ def render_latest(items: list[Article], lang: str) -> str:
         parts.append(f"<p>{_e(t(lang, 'empty'))}</p>")
     for index, article in enumerate(shown, start=1):
         parts.append(
-            f"<h3>{index}. {_e(article.title)}</h3>{_figure(article)}<footer>{_e(article.source_name)}</footer>"
+            f"<h3>{index}. {_e(article.title)}</h3><footer>{_e(article.source_name)}</footer>"
         )
     parts.append(_disclaimer(lang))
     return fit("".join(parts))
@@ -592,7 +641,7 @@ def render_category(category: str, items: list[Article], lang: str) -> str:
 
 def render_article(article: Article, lang: str, tz_name: str) -> str:
     parts = [
-        f"<footer>{_e(cat_name(lang, article.category))}</footer>",
+        f"<footer>{_e(topic_label(article, lang))}</footer>",
         f"<h1>{_e(article.title)}</h1>",
         _figure(article),
         f"<p>{_e(clip(summary_text(article, lang), 700))}</p>",
@@ -609,7 +658,7 @@ def render_full(article: Article, lang: str, tz_name: str, *, expanded: bool) ->
     body = article.body.strip()
     text = body if len(body) >= len(article.summary.strip()) else summary_text(article, lang)
     parts = [
-        f"<footer>{_e(cat_name(lang, article.category))}</footer>",
+        f"<footer>{_e(topic_label(article, lang))}</footer>",
         f"<h1>{_e(article.title)}</h1>",
         _figure(article),
     ]
@@ -654,17 +703,17 @@ def render_settings(user: User) -> str:
     return fit("\n".join(lines))
 
 
-def render_help(lang: str) -> str:
-    return fit(t(lang, "help"))
+def render_help(lang: str, names: list[str] | None = None) -> str:
+    return fit(fill(t(lang, "help"), sources=format_publishers(names)))
 
 
-def render_how_it_works(lang: str) -> str:
-    return fit(t(lang, "how_it_works"))
+def render_how_it_works(lang: str, names: list[str] | None = None) -> str:
+    return fit(fill(t(lang, "how_it_works"), sources=format_publishers(names)))
 
 
-def render_sources(lang: str, blocks: list[tuple[str, str]], *, allow_link: bool) -> str:
+def render_sources(lang: str, blocks: list[tuple[str, str]], *, allow_link: bool, names: list[str] | None = None) -> str:
     lines = [f"<b>{html.escape(t(lang, 'sources_title'))}</b>", ""]
-    lines.append(html.escape(t(lang, "sources_intro")))
+    lines.append(html.escape(fill(t(lang, "sources_intro"), sources=format_publishers(names))))
     lines.append("")
     for name, about in blocks:
         lines.append(f"<b>{html.escape(name)}</b>")
@@ -729,14 +778,27 @@ def render_plans(user: User, catalog_count: int = 0) -> str:
     return fit("\n".join(lines))
 
 
-def render_feed(user: User, sources: list[tuple[str, bool, str | None, str]]) -> str:
-    enabled = sum(1 for _, state, _, _ in sources if state)
+def render_feed(
+    user: User,
+    sources: list[tuple[int, bool, str | None, str, int]],
+    *,
+    page: int,
+    pages: int,
+    enabled: int,
+    limit: int,
+) -> str:
     lines = [
         f"<b>{html.escape(t(user.lang, 'feed_title'))}</b>",
         "",
-        html.escape(t(user.lang, "feed_intro")),
+        html.escape(
+            fill(
+                t(user.lang, "feed_intro"),
+                enabled=enabled,
+                limit=limit,
+            )
+        ),
         "",
-        html.escape(f"{enabled}"),
+        html.escape(fill(t(user.lang, "feed_page"), page=page, pages=pages)),
         f"<i>{html.escape(t(user.lang, 'disclaimer'))}</i>",
     ]
     return fit("\n".join(lines))

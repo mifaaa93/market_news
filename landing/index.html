@@ -3,59 +3,105 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Market News — деловые новости в одном окне</title>
+  <title>Market News — деловые новости в Telegram</title>
   <style>
     :root { color-scheme: dark; --bg:#0c1220; --card:#141d31; --text:#f6f8ff; --muted:#aab6cf; --accent:#72d6a1; }
-    * { box-sizing:border-box; } body { margin:0; font:16px/1.55 system-ui,sans-serif; color:var(--text); background:radial-gradient(circle at 70% 0,#1e3157,var(--bg) 45%); }
-    main { max-width:1000px; margin:auto; padding:72px 24px; } h1 { max-width:720px; font-size:clamp(38px,7vw,72px); line-height:1.03; margin:0 0 20px; }
-    h2 { margin-top:64px; } p { color:var(--muted); } .lead { max-width:650px; font-size:21px; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:16px/1.55 system-ui,sans-serif; color:var(--text); background:radial-gradient(circle at 70% 0,#1e3157,var(--bg) 45%); }
+    main { max-width:1000px; margin:auto; padding:72px 24px; }
+    h1 { max-width:760px; font-size:clamp(36px,7vw,68px); line-height:1.05; margin:0 0 20px; }
+    h2 { margin-top:64px; }
+    p { color:var(--muted); }
+    .lead { max-width:680px; font-size:21px; }
     .button { display:inline-block; margin:20px 0 12px; padding:14px 22px; border-radius:12px; color:#08140f; background:var(--accent); text-decoration:none; font-weight:700; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:16px; } .card { padding:22px; background:rgba(20,29,49,.9); border:1px solid #263653; border-radius:16px; }
-    .price { font-size:30px; font-weight:750; } ul { padding-left:20px; color:var(--muted); } li { margin:10px 0; }
-    .sources { display:flex; flex-wrap:wrap; gap:10px; } .source { padding:10px 14px; border:1px solid #314568; border-radius:999px; color:#d9e3f8; }
-    footer { margin-top:70px; color:var(--muted); border-top:1px solid #263653; padding-top:24px; } [dir=rtl] { text-align:right; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:16px; }
+    .card { padding:22px; background:rgba(20,29,49,.9); border:1px solid #263653; border-radius:16px; }
+    .price { font-size:30px; font-weight:750; margin:8px 0 12px; }
+    ul { padding-left:20px; color:var(--muted); }
+    li { margin:10px 0; }
+    .sources { display:flex; flex-wrap:wrap; gap:10px; }
+    .source { padding:10px 14px; border:1px solid #314568; border-radius:999px; color:#d9e3f8; }
+    footer { margin-top:70px; color:var(--muted); border-top:1px solid #263653; padding-top:24px; }
+    [dir=rtl] { text-align:right; }
+    .kicker { letter-spacing:.12em; font-size:13px; color:#8ea0c4; }
   </style>
 </head>
 <body>
 <main>
   <section>
-    <p>MARKET NEWS</p>
-    <h1>Деловые новости в одном окне.</h1>
-    <p class="lead">Лента реальных деловых источников, полный текст внутри бота и уведомление по подписке, когда новый материал уже сохранён.</p>
+    <p class="kicker">MARKET NEWS</p>
+    <h1>Деловые новости в одном окне Telegram.</h1>
+    <p class="lead">Топ заголовков с Reuters, CNBC, BBC, The Guardian и других изданий. Текст внутри бота, перевод на русский и арабский, уведомления по выбранным источникам.</p>
     <a class="button" href="https://t.me/test99012_bot">Открыть в Telegram</a>
   </section>
 
   <section>
     <div class="grid">
-      <article class="card"><b>Лента рынка</b><p>ABC News Business, BBC Business, CNBC, OilPrice, CoinDesk, U.S. EIA и Federal Reserve.</p></article>
-      <article class="card"><b>Полный текст</b><p>Открывайте новости внутри бота, без перехода на внешний сайт в начале знакомства.</p></article>
-      <article class="card"><b>Уведомление по подписке</b><p>Plus и Pro присылают отдельное сообщение по новой статье включённого источника.</p></article>
+      <article class="card"><b>Топ дня</b><p>Главные деловые сюжеты в том порядке, как их отдают ведущие издания.</p></article>
+      <article class="card"><b>Своя лента</b><p>Включайте источники. Сначала издания из текущего топа, отмеченные ★.</p></article>
+      <article class="card"><b>Язык</b><p>Сбор на английском. Русский и арабский — перевод, без смеси языков в одном экране.</p></article>
     </div>
   </section>
 
   <section>
     <h2>Источники</h2>
     <div class="sources">
-      <span class="source">ABC News Business</span><span class="source">BBC Business</span><span class="source">CNBC</span>
-      <span class="source">OilPrice</span><span class="source">CoinDesk</span>
-      <span class="source">U.S. EIA</span><span class="source">Federal Reserve</span>
+      <span class="source">Reuters</span>
+      <span class="source">CNBC</span>
+      <span class="source">BBC</span>
+      <span class="source">The Guardian</span>
+      <span class="source">Yahoo</span>
+      <span class="source">Seeking Alpha</span>
+      <span class="source">Livemint</span>
+      <span class="source">CNA</span>
     </div>
   </section>
 
   <section>
     <h2>Тарифы</h2>
     <div class="grid">
-      <article class="card"><h3>Базовый</h3><div class="price">0 Stars</div><ul><li>до 5 включённых лент</li><li>дневной дайджест</li></ul></article>
-      <article class="card"><h3>Plus</h3><div class="price">200 Stars</div><ul><li>30 дней</li><li>до 100 слотов</li><li>до 5 своих сайтов</li><li>сообщение по новой статье</li></ul></article>
-      <article class="card"><h3>Pro</h3><div class="price">500 Stars</div><ul><li>30 дней</li><li>до 500 слотов</li><li>до 20 своих сайтов</li><li>опрос лент каждые 5 минут</li></ul></article>
+      <article class="card">
+        <h3>Базовый</h3>
+        <div class="price">0 Stars</div>
+        <ul>
+          <li>до 5 источников</li>
+          <li>дайджест и категории</li>
+          <li>текст внутри бота</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Plus</h3>
+        <div class="price">200 Stars</div>
+        <ul>
+          <li>30 дней</li>
+          <li>до 100 источников</li>
+          <li>уведомление с минимальной задержкой</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Pro</h3>
+        <div class="price">500 Stars</div>
+        <ul>
+          <li>30 дней</li>
+          <li>до 500 источников</li>
+          <li>уведомления мгновенно</li>
+        </ul>
+      </article>
     </div>
   </section>
 
   <section lang="en">
-    <h2>Market news in one window.</h2>
-    <p class="lead">Business feeds, full text inside Telegram and a message when a new story from your selected sources is saved.</p>
+    <h2>Market news in one Telegram window.</h2>
+    <p class="lead">Top business headlines from Reuters, CNBC, BBC and The Guardian. Full text inside the bot, Russian and Arabic translations, alerts from the sources you pick.</p>
     <a class="button" href="https://t.me/test99012_bot">Open in Telegram</a>
   </section>
+
+  <section lang="ar" dir="rtl">
+    <h2>أخبار الأعمال في نافذة واحدة.</h2>
+    <p class="lead">أبرز العناوين من Reuters وCNBC وBBC وThe Guardian. النص داخل البوت، ترجمة إلى العربية، وتنبيهات من مصادرك.</p>
+    <a class="button" href="https://t.me/test99012_bot">افتح في Telegram</a>
+  </section>
+
   <footer>Market News. Это не инвестиционная рекомендация и не прогноз цены.</footer>
 </main>
 </body>

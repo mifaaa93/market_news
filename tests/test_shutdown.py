@@ -10,37 +10,11 @@ import main
 
 
 class ShutdownTests(unittest.IsolatedAsyncioTestCase):
-    async def test_translation_loop_is_sequential(self) -> None:
-        calls = []
-        complete = asyncio.Event()
-
-        async def fake_worker(*_args):
-            calls.append(("started", asyncio.get_running_loop().time()))
-            await asyncio.sleep(0.02)
-            calls.append(("finished", asyncio.get_running_loop().time()))
-            if len(calls) >= 4:
-                complete.set()
-
-        with (
-            patch.object(main, "translation_worker", side_effect=fake_worker),
-            patch.object(main.config, "TRANSLATION_WORKER_SECONDS", 0.01),
-        ):
-            task = asyncio.create_task(main.translation_loop(None, None))
-            try:
-                await asyncio.wait_for(complete.wait(), timeout=1)
-            finally:
-                task.cancel()
-                with self.assertRaises(asyncio.CancelledError):
-                    await task
-        self.assertEqual([event for event, _ in calls[:4]], [
-            "started", "finished", "started", "finished",
-        ])
-        self.assertGreaterEqual(calls[2][1] - calls[1][1], 0.01)
-
     async def test_sigint_during_setup_closes_database_and_session(self) -> None:
         database = MagicMock()
         database.connect = AsyncMock()
         database.close = AsyncMock()
+        database.count_articles = AsyncMock(return_value=0)
         bot = MagicMock()
         bot.session.close = AsyncMock()
         dispatcher = MagicMock()

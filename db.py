@@ -1,46 +1,52 @@
-"""SQLite: пользователи, лента и учёт прочитанного."""
+"""PostgreSQL: пользователи, источники GNews и лента."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-import aiosqlite
+import asyncpg
 
 import config
-from content import is_public_article_url, source_hash
-from models import Article, Source, User
+from content import classify_topics, source_hash
+from gnews import IncomingArticle
+from models import CATEGORIES, Article, Source, User
 from texts import interface_lang
-
-# Тот же порог, что is_full_text: короткий анонс из RSS пользователю не показываем.
-_FULL_TEXT_SQL = "length(body) >= 900 AND length(body) >= length(summary) + 400"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
+    user_id BIGINT PRIMARY KEY,
     username TEXT,
     first_name TEXT,
     lang TEXT NOT NULL DEFAULT 'ru',
-    notifications INTEGER NOT NULL DEFAULT 1,
+    notifications BOOLEAN NOT NULL DEFAULT TRUE,
     digest_hour INTEGER NOT NULL DEFAULT 9,
     timezone TEXT NOT NULL DEFAULT 'Europe/Moscow',
     interactions INTEGER NOT NULL DEFAULT 0,
     full_reads INTEGER NOT NULL DEFAULT 0,
-    premium_until TEXT,
-    created_at TEXT NOT NULL,
+    premium_until TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
     last_digest_on TEXT,
-    blocked INTEGER NOT NULL DEFAULT 0,
+    blocked BOOLEAN NOT NULL DEFAULT FALSE,
     plan TEXT NOT NULL DEFAULT 'base',
-    source_pending INTEGER NOT NULL DEFAULT 0,
-    subscribed_at TEXT
+    subscribed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS sources (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    url TEXT NOT NULL DEFAULT '',
+    lang TEXT NOT NULL DEFAULT 'en',
+    extra JSONB NOT NULL DEFAULT '{}'::jsonb,
+    first_seen_at TIMESTAMPTZ NOT NULL,
+    last_seen_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS articles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     guid TEXT NOT NULL UNIQUE,
-    source_key TEXT NOT NULL,
-    source_name TEXT NOT NULL,
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     title_norm TEXT NOT NULL UNIQUE,
     summary TEXT NOT NULL,
@@ -48,29 +54,56 @@ CREATE TABLE IF NOT EXISTS articles (
     url TEXT NOT NULL,
     image_url TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL,
-    published_at TEXT NOT NULL,
-    fetched_at TEXT NOT NULL,
-    full_checked INTEGER NOT NULL DEFAULT 0,
-    first_seen_at TEXT NOT NULL DEFAULT '',
-    catalog_visible INTEGER NOT NULL DEFAULT 0
+    lang TEXT NOT NULL DEFAULT 'en',
+    published_at TIMESTAMPTZ NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'search',
+    top_rank INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_published ON articles(published_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_source ON articles(source_id);
 CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_top ON articles(top_rank);
+
+CREATE TABLE IF NOT EXISTS article_topics (
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    category TEXT NOT NULL,
+    PRIMARY KEY (article_id, category)
+);
+CREATE INDEX IF NOT EXISTS idx_article_topics_category ON article_topics(category);
+
+CREATE TABLE IF NOT EXISTS translations (
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    body TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (article_id, lang)
+);
+
+CREATE TABLE IF NOT EXISTS user_sources (
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    PRIMARY KEY (user_id, source_id)
+);
 
 CREATE TABLE IF NOT EXISTS seen (
-    user_id INTEGER NOT NULL,
-    article_id INTEGER NOT NULL,
-    opened_at TEXT NOT NULL,
-    PRIMARY KEY (user_id, article_id),
-    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    opened_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, article_id)
 );
 
 CREATE TABLE IF NOT EXISTS payments (
     charge_id TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL,
+    user_id BIGINT NOT NULL,
     amount INTEGER NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -78,137 +111,101 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS translations (
-    article_id INTEGER NOT NULL,
-    lang TEXT NOT NULL,
-    title TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    body TEXT NOT NULL,
-    source_hash TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (article_id, lang),
-    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS feed_catalog (
-    source_key TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    feed_url TEXT NOT NULL,
-    homepage TEXT NOT NULL DEFAULT '',
-    owner_user_id INTEGER,
-    custom INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS user_sources (
-    user_id INTEGER NOT NULL,
-    source_key TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (user_id, source_key),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (source_key) REFERENCES feed_catalog(source_key) ON DELETE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS article_pushes (
-    user_id INTEGER NOT NULL,
-    article_id INTEGER NOT NULL,
-    sent_at TEXT NOT NULL,
-    PRIMARY KEY (user_id, article_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    sent_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, article_id)
 );
 
 CREATE TABLE IF NOT EXISTS admin_actions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    admin_user_id INTEGER NOT NULL,
-    target_user_id INTEGER NOT NULL,
+    id SERIAL PRIMARY KEY,
+    admin_user_id BIGINT NOT NULL,
+    target_user_id BIGINT NOT NULL,
     action TEXT NOT NULL,
     plan TEXT,
-    created_at TEXT NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS api_quota (
+    day DATE PRIMARY KEY,
+    used INTEGER NOT NULL
 );
 """
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _iso(value: datetime | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    moment = value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_dt(value: str) -> datetime:
+    if value.endswith("Z"):
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    moment = datetime.fromisoformat(value)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
 
 
 class Database:
-    def __init__(self, path: str) -> None:
-        self.path = path
-        self._conn: aiosqlite.Connection | None = None
-
-    async def connect(self) -> None:
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = await aiosqlite.connect(self.path)
-        self._conn.row_factory = aiosqlite.Row
-        cursor = await self._conn.execute("PRAGMA journal_mode=WAL")
-        await cursor.fetchone()
-        await self._conn.execute("PRAGMA foreign_keys=ON")
-        await self._conn.execute("PRAGMA busy_timeout=5000")
-        await self._conn.executescript(_SCHEMA)
-        await self._ensure_columns()
-        # Older versions marked HTTP 429 as a permanent failure. Retry those
-        # CoinDesk entries once after the new backoff mechanism is installed.
-        cursor = await self.conn.execute(
-            "SELECT 1 FROM meta WHERE key='retry_coindesk_429_v1'"
-        )
-        if await cursor.fetchone() is None:
-            await self.conn.execute(
-                "UPDATE articles SET full_checked=0 "
-                "WHERE source_key='coindesk' AND full_checked=1 AND url!='' "
-                f"AND NOT ({_FULL_TEXT_SQL})"
-            )
-            await self.conn.execute(
-                "INSERT INTO meta(key, value) VALUES ('retry_coindesk_429_v1', '1')"
-            )
-        await self._conn.commit()
-
-    async def _ensure_columns(self) -> None:
-        cursor = await self.conn.execute("PRAGMA table_info(users)")
-        user_names = {row["name"] for row in await cursor.fetchall()}
-        if "plan" not in user_names:
-            await self.conn.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'base'")
-        if "source_pending" not in user_names:
-            await self.conn.execute(
-                "ALTER TABLE users ADD COLUMN source_pending INTEGER NOT NULL DEFAULT 0"
-            )
-        if "subscribed_at" not in user_names:
-            await self.conn.execute("ALTER TABLE users ADD COLUMN subscribed_at TEXT")
-        await self.conn.execute(
-            "UPDATE users SET plan='plus' WHERE premium_until IS NOT NULL AND plan='base'"
-        )
-        cursor = await self.conn.execute("PRAGMA table_info(articles)")
-        rows = await cursor.fetchall()
-        names = {row["name"] for row in rows}
-        if "image_url" not in names:
-            await self.conn.execute(
-                "ALTER TABLE articles ADD COLUMN image_url TEXT NOT NULL DEFAULT ''"
-            )
-        if "full_checked" not in names:
-            await self.conn.execute(
-                "ALTER TABLE articles ADD COLUMN full_checked INTEGER NOT NULL DEFAULT 0"
-            )
-        if "first_seen_at" not in names:
-            await self.conn.execute(
-                "ALTER TABLE articles ADD COLUMN first_seen_at TEXT NOT NULL DEFAULT ''"
-            )
-            await self.conn.execute("UPDATE articles SET first_seen_at=fetched_at")
-        if "catalog_visible" not in names:
-            await self.conn.execute(
-                "ALTER TABLE articles ADD COLUMN catalog_visible INTEGER NOT NULL DEFAULT 1"
-            )
-
-    async def close(self) -> None:
-        if self._conn is not None:
-            await self._conn.close()
-            self._conn = None
+    def __init__(self, dsn: str | None = None) -> None:
+        self.dsn = dsn or config.DATABASE_URL
+        self._pool: asyncpg.Pool | None = None
 
     @property
-    def conn(self) -> aiosqlite.Connection:
-        if self._conn is None:
+    def pool(self) -> asyncpg.Pool:
+        if self._pool is None:
             raise RuntimeError("database is not connected")
-        return self._conn
+        return self._pool
+
+    async def connect(self) -> None:
+        self._pool = await asyncpg.create_pool(
+            dsn=self.dsn,
+            min_size=1,
+            max_size=8,
+            init=_init_connection,
+        )
+        async with self.pool.acquire() as conn:
+            await conn.execute(_SCHEMA)
+            await conn.execute(
+                "ALTER TABLE articles ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'search'"
+            )
+            await conn.execute("ALTER TABLE articles ADD COLUMN IF NOT EXISTS top_rank INTEGER")
+        await self.backfill_topics()
+
+    async def reset_all(self) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                DROP TABLE IF EXISTS article_topics, translations, article_pushes, seen, user_sources,
+                    articles, sources, payments, admin_actions, api_quota, meta, users CASCADE
+                """
+            )
+            await conn.execute(_SCHEMA)
+
+    async def close(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
 
     async def upsert_user(
         self,
@@ -218,29 +215,38 @@ class Database:
         language_code: str | None = None,
     ) -> User:
         lang = interface_lang(language_code)
-        await self.conn.execute(
-            """
-            INSERT INTO users (
-                user_id, username, first_name, lang, notifications, digest_hour,
-                timezone, interactions, full_reads, premium_until, created_at,
-                last_digest_on, blocked, plan, source_pending
-            ) VALUES (?, ?, ?, ?, 1, ?, ?, 0, 0, NULL, ?, NULL, 0, 'base', 0)
-            ON CONFLICT(user_id) DO UPDATE SET
-                username=excluded.username,
-                first_name=excluded.first_name,
-                blocked=0
-            """,
-            (user_id, username, first_name, lang, config.DEFAULT_HOUR, config.DEFAULT_TZ, utc_now_iso()),
-        )
-        await self.conn.commit()
-        return await self.require_user(user_id)
+        now = utc_now()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO users (
+                    user_id, username, first_name, lang, notifications, digest_hour,
+                    timezone, interactions, full_reads, premium_until, created_at,
+                    last_digest_on, blocked, plan
+                ) VALUES ($1, $2, $3, $4, TRUE, $5, $6, 0, 0, NULL, $7, NULL, FALSE, 'base')
+                ON CONFLICT (user_id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    first_name = EXCLUDED.first_name,
+                    blocked = FALSE
+                RETURNING *, (xmax = 0) AS inserted
+                """,
+                user_id,
+                username,
+                first_name,
+                lang,
+                config.DEFAULT_HOUR,
+                config.DEFAULT_TZ,
+                now,
+            )
+        user = _user(row)
+        if row["inserted"]:
+            await self.ensure_default_sources(user)
+        return user
 
     async def get_user(self, user_id: int) -> User | None:
-        cursor = await self.conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return _user(row)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)
+        return _user(row) if row else None
 
     async def require_user(self, user_id: int) -> User:
         user = await self.get_user(user_id)
@@ -248,413 +254,691 @@ class Database:
             raise LookupError(user_id)
         return user
 
-    async def _update_user(self, user_id: int, sql: str, params: tuple) -> User:
-        await self.conn.execute(sql, (*params, user_id))
-        await self.conn.commit()
-        return await self.require_user(user_id)
+    async def _fetch_user_after(self, conn: asyncpg.Connection, user_id: int) -> User:
+        row = await conn.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)
+        if row is None:
+            raise LookupError(user_id)
+        return _user(row)
 
     async def set_lang(self, user_id: int, lang: str) -> User:
-        return await self._update_user(user_id, "UPDATE users SET lang=? WHERE user_id=?", (lang,))
+        async with self.pool.acquire() as conn:
+            await conn.execute("UPDATE users SET lang=$1 WHERE user_id=$2", lang, user_id)
+            return await self._fetch_user_after(conn, user_id)
 
     async def set_notifications(self, user_id: int, enabled: bool) -> User:
-        return await self._update_user(
-            user_id,
-            "UPDATE users SET notifications=? WHERE user_id=?",
-            (1 if enabled else 0,),
-        )
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET notifications=$1 WHERE user_id=$2",
+                enabled,
+                user_id,
+            )
+            return await self._fetch_user_after(conn, user_id)
 
     async def set_hour(self, user_id: int, hour: int) -> User:
-        return await self._update_user(user_id, "UPDATE users SET digest_hour=? WHERE user_id=?", (hour,))
+        async with self.pool.acquire() as conn:
+            await conn.execute("UPDATE users SET digest_hour=$1 WHERE user_id=$2", hour, user_id)
+            return await self._fetch_user_after(conn, user_id)
 
     async def set_timezone(self, user_id: int, zone: str) -> User:
-        return await self._update_user(user_id, "UPDATE users SET timezone=? WHERE user_id=?", (zone,))
-
-    async def set_source_pending(self, user_id: int, pending: bool) -> User:
-        return await self._update_user(
-            user_id,
-            "UPDATE users SET source_pending=? WHERE user_id=?",
-            (1 if pending else 0,),
-        )
+        async with self.pool.acquire() as conn:
+            await conn.execute("UPDATE users SET timezone=$1 WHERE user_id=$2", zone, user_id)
+            return await self._fetch_user_after(conn, user_id)
 
     async def add_interaction(self, user_id: int, *, full_read: bool = False) -> User:
-        if full_read:
-            sql = """
-                UPDATE users
-                SET interactions = interactions + 1, full_reads = full_reads + 1
-                WHERE user_id=?
-            """
-        else:
-            sql = "UPDATE users SET interactions = interactions + 1 WHERE user_id=?"
-        await self.conn.execute(sql, (user_id,))
-        await self.conn.commit()
-        return await self.require_user(user_id)
+        async with self.pool.acquire() as conn:
+            if full_read:
+                await conn.execute(
+                    """
+                    UPDATE users
+                    SET interactions = interactions + 1, full_reads = full_reads + 1
+                    WHERE user_id=$1
+                    """,
+                    user_id,
+                )
+            else:
+                await conn.execute(
+                    "UPDATE users SET interactions = interactions + 1 WHERE user_id=$1",
+                    user_id,
+                )
+            return await self._fetch_user_after(conn, user_id)
 
     async def mark_seen(self, user_id: int, article_id: int) -> None:
-        await self.conn.execute(
-            """
-            INSERT INTO seen (user_id, article_id, opened_at) VALUES (?, ?, ?)
-            ON CONFLICT(user_id, article_id) DO NOTHING
-            """,
-            (user_id, article_id, utc_now_iso()),
-        )
-        await self.conn.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO seen (user_id, article_id, opened_at)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, article_id) DO NOTHING
+                """,
+                user_id,
+                article_id,
+                utc_now(),
+            )
 
     async def count_seen(self, user_id: int) -> int:
-        cursor = await self.conn.execute("SELECT COUNT(*) FROM seen WHERE user_id=?", (user_id,))
-        row = await cursor.fetchone()
-        return int(row[0])
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval("SELECT COUNT(*) FROM seen WHERE user_id=$1", user_id)
+        return int(value or 0)
 
-    async def count_articles(self) -> int:
-        cursor = await self.conn.execute("SELECT COUNT(*) FROM articles")
-        row = await cursor.fetchone()
-        return int(row[0])
+    async def count_articles(self, lang: str | None = None) -> int:
+        async with self.pool.acquire() as conn:
+            if lang:
+                value = await conn.fetchval("SELECT COUNT(*) FROM articles WHERE lang=$1", lang)
+            else:
+                value = await conn.fetchval("SELECT COUNT(*) FROM articles")
+        return int(value or 0)
 
-    async def category_counts(self, *, full_only: bool = False) -> dict[str, int]:
-        where = f"WHERE {_FULL_TEXT_SQL}" if full_only else ""
-        cursor = await self.conn.execute(
-            f"SELECT category, COUNT(*) AS n FROM articles {where} GROUP BY category"
-        )
-        rows = await cursor.fetchall()
-        return {row["category"]: int(row["n"]) for row in rows}
-
-    async def upsert_articles(
-        self, items: list[Article], *, catalog_visible: bool = False
-    ) -> int:
-        saved = 0
-        for item in items:
-            url = (
-                item.url
-                if is_public_article_url(item.url)
-                or (item.source_key.startswith("custom:") and item.url.startswith("https://"))
-                else ""
+    async def category_counts(self, user_id: int) -> dict[str, int]:
+        enabled = await self.enabled_source_ids(user_id)
+        if not enabled:
+            return {}
+        user = await self.require_user(user_id)
+        params: list[object] = [enabled]
+        ready = self._ready_sql(user.lang, params)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT t.category, COUNT(*) AS n
+                FROM article_topics t
+                JOIN articles a ON a.id = t.article_id
+                WHERE a.source_id = ANY($1::int[]){ready}
+                GROUP BY t.category
+                """,
+                *params,
             )
-            try:
-                await self.conn.execute(
-                    """
-                    INSERT INTO articles (
-                        guid, source_key, source_name, title, title_norm, summary,
-                        body, url, image_url, category, published_at, fetched_at,
-                        first_seen_at, catalog_visible
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(guid) DO UPDATE SET
-                        summary=excluded.summary,
-                        body=CASE
-                            WHEN length(articles.body) > length(excluded.body) + 400 THEN articles.body
-                            ELSE excluded.body
-                        END,
-                        fetched_at=excluded.fetched_at,
-                        url=CASE WHEN excluded.url != '' THEN excluded.url ELSE articles.url END,
-                        image_url=CASE WHEN excluded.image_url != '' THEN excluded.image_url ELSE articles.image_url END
-                    """,
-                    (
+        return {str(row["category"]): int(row["n"]) for row in rows}
+
+    async def upsert_source(
+        self,
+        conn: asyncpg.Connection,
+        *,
+        name: str,
+        url: str,
+        lang: str,
+        extra: dict,
+        seen_at: datetime,
+    ) -> int:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO sources (name, url, lang, extra, first_seen_at, last_seen_at)
+            VALUES ($1, $2, $3, $4::jsonb, $5, $5)
+            ON CONFLICT (name) DO UPDATE SET
+                url = CASE WHEN EXCLUDED.url <> '' THEN EXCLUDED.url ELSE sources.url END,
+                extra = CASE
+                    WHEN EXCLUDED.extra = '{}'::jsonb THEN sources.extra
+                    ELSE EXCLUDED.extra
+                END,
+                last_seen_at = EXCLUDED.last_seen_at
+            RETURNING id
+            """,
+            name,
+            url,
+            lang,
+            extra,
+            seen_at,
+        )
+        return int(row["id"])
+
+    async def ingest_articles(self, items: list[IncomingArticle]) -> int:
+        if not items:
+            return 0
+        saved = 0
+        now = utc_now()
+        async with self.pool.acquire() as conn:
+            for item in items:
+                source_id = await self.upsert_source(
+                    conn,
+                    name=item.source_name,
+                    url=item.source_url,
+                    lang=item.lang,
+                    extra=item.source_extra,
+                    seen_at=now,
+                )
+                published = _parse_dt(item.published_at)
+                origin = item.origin if item.origin in {"search", "top"} else "search"
+                try:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO articles (
+                            guid, source_id, title, title_norm, summary, body, url,
+                            image_url, category, lang, published_at, fetched_at, first_seen_at,
+                            origin, top_rank
+                        ) VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $14
+                        )
+                        ON CONFLICT (guid) DO NOTHING
+                        RETURNING id
+                        """,
                         item.guid,
-                        item.source_key,
-                        item.source_name,
+                        source_id,
                         item.title,
                         item.title_norm,
                         item.summary,
                         item.body,
-                        url,
+                        item.url,
                         item.image_url,
                         item.category,
-                        item.published_at,
-                        item.fetched_at,
-                        item.fetched_at,
-                        1 if catalog_visible else 0,
-                    ),
-                )
-                saved += 1
-            except aiosqlite.IntegrityError:
-                continue
-        await self.conn.commit()
+                        item.lang,
+                        published,
+                        now,
+                        origin,
+                        item.top_rank,
+                    )
+                    if row is None:
+                        continue
+                    await self._replace_topics(
+                        conn, int(row["id"]), item.categories or (item.category,)
+                    )
+                    saved += 1
+                except asyncpg.UniqueViolationError:
+                    continue
         return saved
 
-    async def mark_catalog_visible(self, items: list[Article]) -> None:
-        norms = [item.title_norm for item in items if item.title_norm]
-        if not norms:
-            return
-        marks = ",".join("?" for _ in norms)
-        await self.conn.execute(
-            f"UPDATE articles SET catalog_visible=1 WHERE title_norm IN ({marks})",
-            norms,
+    async def _replace_topics(
+        self, conn: asyncpg.Connection, article_id: int, categories: tuple[str, ...] | list[str]
+    ) -> None:
+        cats = [category for category in categories if category in CATEGORIES]
+        if not cats:
+            cats = ["markets"]
+        await conn.execute("DELETE FROM article_topics WHERE article_id=$1", article_id)
+        await conn.executemany(
+            "INSERT INTO article_topics(article_id, category) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            [(article_id, category) for category in cats],
         )
-        await self.conn.commit()
 
-    async def ensure_catalog(self, rows: list[tuple[str, str, str, str]]) -> None:
-        # Remove only known discontinued public feeds. Never touch a user's private source.
-        retired = (
-            "marketwatch", "investing", "cnn-business", "yahoo-finance", "sec-press",
-            "guardian-business", "guardian-markets",
-        )
-        marks = ",".join("?" for _ in retired)
-        await self.conn.execute(
-            f"DELETE FROM feed_catalog WHERE owner_user_id IS NULL AND source_key IN ({marks})",
-            retired,
-        )
-        await self.conn.execute(
-            "DELETE FROM articles WHERE source_key IN ('guardian-business', 'guardian-markets')"
-        )
-        for key, name, feed_url, homepage in rows:
-            await self.conn.execute(
+    async def backfill_topics(self) -> None:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
                 """
-                INSERT INTO feed_catalog(source_key, name, feed_url, homepage, owner_user_id, custom, created_at)
-                VALUES (?, ?, ?, ?, NULL, 0, ?)
-                ON CONFLICT(source_key) DO UPDATE SET
-                    name=excluded.name, feed_url=excluded.feed_url, homepage=excluded.homepage
-                """,
-                (key, name, feed_url, homepage, utc_now_iso()),
-            )
-        await self.conn.commit()
-
-    async def list_sources(self, user_id: int | None = None) -> list[Source]:
-        if user_id is None:
-            cursor = await self.conn.execute(
-                "SELECT * FROM feed_catalog WHERE owner_user_id IS NULL ORDER BY custom, name"
-            )
-        else:
-            cursor = await self.conn.execute(
+                SELECT a.id, a.title, a.summary, a.body
+                FROM articles a
+                LEFT JOIN article_topics t ON t.article_id = a.id
+                WHERE t.article_id IS NULL
                 """
-                SELECT * FROM feed_catalog
-                WHERE owner_user_id IS NULL OR owner_user_id=?
-                ORDER BY custom, name
-                """,
-                (user_id,),
             )
-        return [_source(row) for row in await cursor.fetchall()]
+            for row in rows:
+                topics = classify_topics(row["title"], f"{row['summary']}\n{row['body']}")
+                await self._replace_topics(conn, int(row["id"]), topics)
+                await conn.execute(
+                    "UPDATE articles SET category=$1 WHERE id=$2",
+                    topics[0],
+                    int(row["id"]),
+                )
 
-    async def source(self, key: str) -> Source | None:
-        cursor = await self.conn.execute("SELECT * FROM feed_catalog WHERE source_key=?", (key,))
-        row = await cursor.fetchone()
+    async def replace_top(self, lang: str, items: list[IncomingArticle]) -> int:
+        saved = await self.ingest_articles(items)
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("UPDATE articles SET top_rank=NULL")
+                for item in items:
+                    if item.top_rank is None:
+                        continue
+                    await conn.execute(
+                        """
+                        UPDATE articles
+                        SET origin='top', top_rank=$1
+                        WHERE guid=$2
+                        """,
+                        item.top_rank,
+                        item.guid,
+                    )
+        await self.meta_set("fetched_top_at", utc_now_iso())
+        return saved
+
+    def _ready_sql(self, lang: str | None, params: list[object]) -> str:
+        if lang not in config.TRANSLATION_LANGS:
+            return ""
+        params.append(lang)
+        return (
+            " AND EXISTS (SELECT 1 FROM translations x"
+            f" WHERE x.article_id = a.id AND x.lang=${len(params)})"
+        )
+
+    async def list_top(self, lang: str | None = None, limit: int = 10) -> list[Article]:
+        params: list[object] = []
+        ready = self._ready_sql(lang, params)
+        params.append(limit)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT a.*, s.name AS source_name,
+                       COALESCE((
+                           SELECT array_agg(t.category)
+                           FROM article_topics t
+                           WHERE t.article_id = a.id
+                       ), ARRAY[a.category]) AS topics
+                FROM articles a
+                JOIN sources s ON s.id = a.source_id
+                WHERE a.top_rank IS NOT NULL{ready}
+                ORDER BY a.top_rank ASC, a.id ASC
+                LIMIT ${len(params)}
+                """,
+                *params,
+            )
+        items = [_article(row) for row in rows]
+        if lang:
+            return await self.apply_translations(items, lang)
+        return items
+
+    async def headline_publisher_names(self, limit: int = 12) -> list[str]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT s.name
+                FROM sources s
+                JOIN articles a ON a.source_id = s.id AND a.top_rank IS NOT NULL
+                GROUP BY s.id, s.name
+                ORDER BY MIN(a.top_rank) ASC, s.name
+                LIMIT $1
+                """,
+                limit,
+            )
+        return [str(row["name"]) for row in rows]
+
+    async def source(self, source_id: int) -> Source | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT s.*, COUNT(a.id) AS article_count
+                FROM sources s
+                LEFT JOIN articles a ON a.source_id = s.id
+                WHERE s.id=$1
+                GROUP BY s.id
+                """,
+                source_id,
+            )
         return _source(row) if row else None
 
-    async def source_by_url(self, user_id: int, url: str) -> Source | None:
-        cursor = await self.conn.execute(
-            """
-            SELECT * FROM feed_catalog
-            WHERE owner_user_id=? AND feed_url=?
-            LIMIT 1
-            """,
-            (user_id, url),
-        )
-        row = await cursor.fetchone()
-        return _source(row) if row else None
+    async def list_sources_page(
+        self, lang: str | None = None, *, offset: int, limit: int
+    ) -> tuple[list[Source], int]:
+        async with self.pool.acquire() as conn:
+            total = int(await conn.fetchval("SELECT COUNT(*) FROM sources") or 0)
+            rows = await conn.fetch(
+                """
+                SELECT s.*,
+                       COUNT(a.id) AS article_count,
+                       MIN(a.top_rank) AS headline_rank
+                FROM sources s
+                LEFT JOIN articles a ON a.source_id = s.id
+                GROUP BY s.id
+                ORDER BY MIN(a.top_rank) NULLS LAST, COUNT(a.id) DESC, s.name
+                OFFSET $1 LIMIT $2
+                """,
+                offset,
+                limit,
+            )
+        return [_source(row) for row in rows], total
 
-    async def add_custom_source(self, user_id: int, key: str, name: str, feed_url: str, homepage: str) -> Source:
-        await self.conn.execute(
-            """
-            INSERT INTO feed_catalog(source_key, name, feed_url, homepage, owner_user_id, custom, created_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?)
-            ON CONFLICT(source_key) DO UPDATE SET name=excluded.name, feed_url=excluded.feed_url
-            """,
-            (key, name, feed_url, homepage, user_id, utc_now_iso()),
-        )
-        await self.conn.execute(
-            """
-            INSERT INTO user_sources(user_id, source_key, enabled) VALUES (?, ?, 1)
-            ON CONFLICT(user_id, source_key) DO UPDATE SET enabled=1
-            """,
-            (user_id, key),
-        )
-        await self.conn.commit()
-        result = await self.source(key)
-        if result is None:
-            raise LookupError(key)
-        return result
+    async def count_sources(self, lang: str | None = None) -> int:
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval("SELECT COUNT(*) FROM sources")
+        return int(value or 0)
 
-    async def source_states(self, user_id: int) -> dict[str, bool]:
-        sources = await self.list_sources(user_id)
-        cursor = await self.conn.execute(
-            "SELECT source_key, enabled FROM user_sources WHERE user_id=?",
-            (user_id,),
-        )
-        explicit = {str(row["source_key"]): bool(row["enabled"]) for row in await cursor.fetchall()}
-        global_sources = [item for item in sources if not item.custom]
-        # Preserve the existing five default feeds when new catalog entries
-        # sort ahead of them; new sources can still be enabled manually.
-        original = ("bbc", "cnbc-economy", "cnbc-finance", "cnbc-oil", "coindesk")
-        preferred = sorted(
-            global_sources,
-            key=lambda item: (original.index(item.key) if item.key in original else len(original), item.name),
-        )
-        defaults = {item.key for item in preferred[: config.BASE_SOURCE_LIMIT]}
+    async def top_sources(self, lang: str | None = None, limit: int = 5) -> list[Source]:
+        sources, _ = await self.list_sources_page(None, offset=0, limit=limit)
+        return sources
+
+    async def sources_by_names(self, lang: str, names: list[str]) -> list[Source]:
+        if not names:
+            return []
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT s.*, COUNT(a.id) AS article_count
+                FROM sources s
+                LEFT JOIN articles a ON a.source_id = s.id
+                WHERE s.lang=$1 AND s.name = ANY($2::text[])
+                GROUP BY s.id
+                """,
+                lang,
+                names,
+            )
+        by_name = {row["name"]: _source(row) for row in rows}
+        return [by_name[name] for name in names if name in by_name]
+
+    async def enabled_source_ids(self, user_id: int) -> list[int]:
         user = await self.require_user(user_id)
-        allowed = config.PRO_SOURCE_LIMIT if user.is_pro() else (
-            config.PLUS_SOURCE_LIMIT if user.premium_active() else config.BASE_SOURCE_LIMIT
-        )
-        custom_limit = (
-            config.PRO_CUSTOM_LIMIT if user.is_pro()
-            else config.PLUS_CUSTOM_LIMIT if user.premium_active()
-            else 0
-        )
-        custom_seen = 0
-        states: dict[str, bool] = {}
-        for item in sources:
-            state = explicit.get(item.key, item.custom or item.key in defaults)
-            if item.custom:
-                if custom_seen >= custom_limit:
-                    state = False
-                elif state:
-                    custom_seen += 1
-            states[item.key] = state
-        count = 0
-        for item in sources:
-            if states[item.key]:
-                count += 1
-                if count > allowed:
-                    states[item.key] = False
-        return states
+        limit = await self.source_limits(user.active_plan())
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT us.source_id
+                FROM user_sources us
+                JOIN sources s ON s.id = us.source_id
+                LEFT JOIN articles a ON a.source_id = s.id
+                WHERE us.user_id=$1 AND us.enabled
+                GROUP BY us.source_id
+                ORDER BY MIN(a.top_rank) NULLS LAST, COUNT(a.id) DESC, MIN(s.name)
+                LIMIT $2
+                """,
+                user_id,
+                limit,
+            )
+        return [int(row["source_id"]) for row in rows]
 
-    async def set_source_enabled(self, user_id: int, source_key: str, enabled: bool) -> None:
-        await self.conn.execute(
-            """
-            INSERT INTO user_sources(user_id, source_key, enabled) VALUES (?, ?, ?)
-            ON CONFLICT(user_id, source_key) DO UPDATE SET enabled=excluded.enabled
-            """,
-            (user_id, source_key, 1 if enabled else 0),
-        )
-        await self.conn.commit()
+    async def enabled_source_names(self, user_id: int, lang: str) -> list[str]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT s.name
+                FROM user_sources us
+                JOIN sources s ON s.id = us.source_id
+                WHERE us.user_id=$1 AND us.enabled AND s.lang=$2
+                ORDER BY s.name
+                """,
+                user_id,
+                lang,
+            )
+        return [str(row["name"]) for row in rows]
+
+    async def source_has_choice(self, user_id: int, lang: str | None = None) -> bool:
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM user_sources WHERE user_id=$1)",
+                user_id,
+            )
+        return bool(value)
+
+    async def disable_all_sources(self, user_id: int) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE user_sources SET enabled=FALSE WHERE user_id=$1",
+                user_id,
+            )
+
+    async def enable_headline_sources(self, user_id: int, limit: int) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE user_sources SET enabled=FALSE WHERE user_id=$1",
+                    user_id,
+                )
+                rows = await conn.fetch(
+                    """
+                    SELECT s.id
+                    FROM sources s
+                    JOIN articles a ON a.source_id = s.id AND a.top_rank IS NOT NULL
+                    GROUP BY s.id
+                    ORDER BY MIN(a.top_rank) ASC, MIN(s.name)
+                    LIMIT $1
+                    """,
+                    limit,
+                )
+        for row in rows:
+            await self.set_source_enabled(user_id, int(row["id"]), True)
+
+    async def set_source_enabled(self, user_id: int, source_id: int, enabled: bool) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO user_sources(user_id, source_id, enabled)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, source_id) DO UPDATE SET enabled=EXCLUDED.enabled
+                """,
+                user_id,
+                source_id,
+                enabled,
+            )
+
+    async def source_states(self, user_id: int, source_ids: list[int]) -> dict[int, bool]:
+        enabled = set(await self.enabled_source_ids(user_id))
+        return {source_id: source_id in enabled for source_id in source_ids}
 
     async def active_sources(self, user_id: int) -> list[Source]:
-        states = await self.source_states(user_id)
-        sources = await self.list_sources(user_id)
-        return [source for source in sources if states.get(source.key, False)]
+        ids = await self.enabled_source_ids(user_id)
+        if not ids:
+            return []
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT s.*, COUNT(a.id) AS article_count
+                FROM sources s
+                LEFT JOIN articles a ON a.source_id = s.id
+                WHERE s.id = ANY($1::int[])
+                GROUP BY s.id
+                ORDER BY COUNT(a.id) DESC, s.name
+                """,
+                ids,
+            )
+        return [_source(row) for row in rows]
 
-    async def source_limits(self, plan: str) -> tuple[int, int]:
-        if plan == "pro":
-            return config.PRO_SOURCE_LIMIT, config.PRO_CUSTOM_LIMIT
-        if plan == "plus":
-            return config.PLUS_SOURCE_LIMIT, config.PLUS_CUSTOM_LIMIT
-        return config.BASE_SOURCE_LIMIT, 0
+    async def source_limits(self, plan: str) -> int:
+        return config.source_limit_for(plan)
 
-    async def set_plan(self, user_id: int, plan: str, until: str) -> User:
-        return await self._update_user(
-            user_id,
-            "UPDATE users SET plan=?, premium_until=? WHERE user_id=?",
-            (plan, until),
-        )
+    async def ensure_default_sources(self, user: User) -> None:
+        if await self.source_has_choice(user.user_id):
+            return
+        limit = await self.source_limits(user.active_plan())
+        top = await self.top_sources(limit=limit)
+        for source in top:
+            await self.set_source_enabled(user.user_id, source.id, True)
+
+    async def remap_sources(self, user_id: int, names: list[str], new_lang: str, plan: str) -> None:
+        if await self.source_has_choice(user_id, new_lang):
+            return
+        matched = await self.sources_by_names(new_lang, names)
+        limit = await self.source_limits(plan)
+        for source in matched[:limit]:
+            await self.set_source_enabled(user_id, source.id, True)
+        if matched:
+            return
+        user = await self.require_user(user_id)
+        await self.ensure_default_sources(user)
+
+    async def seed_missing_feeds(self) -> None:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT u.*
+                FROM users u
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM user_sources us WHERE us.user_id = u.user_id
+                )
+                """
+            )
+        for row in rows:
+            await self.ensure_default_sources(_user(row))
 
     async def list_push_subscribers(self, article: Article) -> list[User]:
-        cursor = await self.conn.execute(
-            "SELECT * FROM users WHERE blocked=0 AND plan IN ('plus','pro')"
-        )
-        users = [_user(row) for row in await cursor.fetchall()]
-        result: list[User] = []
-        for user in users:
-            if not user.premium_active():
-                continue
-            if (
-                user.plan == "plus"
-                and not article.catalog_visible
-                and not article.source_key.startswith("custom:")
-            ):
-                continue
-            active = await self.active_sources(user.user_id)
-            if any(item.key == article.source_key for item in active):
-                result.append(user)
-        return result
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT u.*
+                FROM users u
+                JOIN user_sources us
+                    ON us.user_id = u.user_id AND us.source_id = $1 AND us.enabled
+                WHERE u.blocked = FALSE
+                  AND u.plan IN ('plus', 'pro')
+                """,
+                article.source_id,
+            )
+        return [user for user in (_user(row) for row in rows) if user.premium_active()]
 
     async def push_already_sent(self, user_id: int, article_id: int) -> bool:
-        cursor = await self.conn.execute(
-            "SELECT 1 FROM article_pushes WHERE user_id=? AND article_id=?",
-            (user_id, article_id),
-        )
-        return await cursor.fetchone() is not None
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT 1 FROM article_pushes WHERE user_id=$1 AND article_id=$2",
+                user_id,
+                article_id,
+            )
+        return value is not None
 
     async def mark_push_sent(self, user_id: int, article_id: int) -> None:
-        await self.conn.execute(
-            "INSERT OR IGNORE INTO article_pushes(user_id, article_id, sent_at) VALUES (?, ?, ?)",
-            (user_id, article_id, utc_now_iso()),
-        )
-        await self.conn.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO article_pushes(user_id, article_id, sent_at)
+                VALUES ($1, $2, $3)
+                ON CONFLICT DO NOTHING
+                """,
+                user_id,
+                article_id,
+                utc_now(),
+            )
 
     async def articles_since(self, stamp: str) -> list[Article]:
-        cursor = await self.conn.execute(
-            f"SELECT * FROM articles WHERE first_seen_at>? AND {_FULL_TEXT_SQL} ORDER BY published_at DESC, id DESC",
-            (stamp,),
-        )
-        return [_article(row) for row in await cursor.fetchall()]
-
-    async def save_full_text(self, article_id: int, body: str | None) -> Article | None:
-        if body:
-            await self.conn.execute(
-                "UPDATE articles SET body=?, full_checked=1 WHERE id=?",
-                (body[:12000], article_id),
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT a.*, s.name AS source_name,
+                       COALESCE((
+                           SELECT array_agg(t.category)
+                           FROM article_topics t
+                           WHERE t.article_id = a.id
+                       ), ARRAY[a.category]) AS topics
+                FROM articles a
+                JOIN sources s ON s.id = a.source_id
+                WHERE a.first_seen_at > $1
+                ORDER BY a.published_at DESC, a.id DESC
+                """,
+                _parse_dt(stamp),
             )
-        else:
-            await self.conn.execute(
-                "UPDATE articles SET full_checked=1 WHERE id=?",
-                (article_id,),
-            )
-        await self.conn.commit()
-        return await self.get_article(article_id)
-
-    async def articles_needing_full_text(self, limit: int = 300) -> list[Article]:
-        await self.conn.execute(
-            "UPDATE articles SET full_checked=1 WHERE full_checked=0 AND url=''"
-        )
-        await self.conn.commit()
-        cursor = await self.conn.execute(
-            """
-            SELECT * FROM articles
-            WHERE full_checked=0
-            ORDER BY published_at DESC, id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        rows = await cursor.fetchall()
         return [_article(row) for row in rows]
 
-    async def remember_images(self, items: list[Article]) -> None:
-        for item in items:
-            if not item.image_url:
-                continue
-            await self.conn.execute(
+    async def recent(self, limit: int, *, lang: str | None = None) -> list[Article]:
+        return await self.recent_for_user(None, limit, lang=lang)
+
+    async def recent_for_user(
+        self, user_id: int | None, limit: int, *, lang: str | None = None
+    ) -> list[Article]:
+        params: list[object] = []
+        where = []
+        user = None
+        if user_id is not None:
+            user = await self.require_user(user_id)
+            enabled = await self.enabled_source_ids(user_id)
+            if not enabled:
+                return []
+            where.append("a.source_id = ANY($%d::int[])" % (len(params) + 1))
+            params.append(enabled)
+        ready_lang = user.lang if user is not None else lang
+        ready = self._ready_sql(ready_lang, params)
+        if ready:
+            where.append(ready.removeprefix(" AND "))
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        params.append(limit)
+        sql = f"""
+            SELECT a.*, s.name AS source_name,
+                       COALESCE((
+                           SELECT array_agg(t.category)
+                           FROM article_topics t
+                           WHERE t.article_id = a.id
+                       ), ARRAY[a.category]) AS topics
+            FROM articles a
+            JOIN sources s ON s.id = a.source_id
+            {clause}
+            ORDER BY a.published_at DESC, a.id DESC
+            LIMIT ${len(params)}
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+        items = [_article(row) for row in rows]
+        if user is not None:
+            return await self.apply_translations(items, user.lang)
+        if lang:
+            return await self.apply_translations(items, lang)
+        return items
+
+    async def by_category(
+        self,
+        category: str,
+        limit: int,
+        *,
+        user_id: int | None = None,
+    ) -> list[Article]:
+        params: list[object] = [category]
+        extra = ""
+        user = None
+        if user_id is not None:
+            user = await self.require_user(user_id)
+            enabled = await self.enabled_source_ids(user_id)
+            if not enabled:
+                return []
+            extra = " AND a.source_id = ANY($2::int[])"
+            params.append(enabled)
+        extra += self._ready_sql(user.lang if user is not None else None, params)
+        params.append(limit)
+        sql = f"""
+            SELECT a.*, s.name AS source_name,
+                       COALESCE((
+                           SELECT array_agg(t.category)
+                           FROM article_topics t
+                           WHERE t.article_id = a.id
+                       ), ARRAY[a.category]) AS topics
+            FROM articles a
+            JOIN sources s ON s.id = a.source_id
+            JOIN article_topics tp ON tp.article_id = a.id AND tp.category=$1
+            WHERE TRUE{extra}
+            ORDER BY a.published_at DESC, a.id DESC
+            LIMIT ${len(params)}
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+        items = [_article(row) for row in rows]
+        if user is not None:
+            return await self.apply_translations(items, user.lang)
+        return items
+
+    async def get_article(self, article_id: int) -> Article | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
                 """
-                UPDATE articles
-                SET image_url=?
-                WHERE title_norm=? AND (image_url='' OR image_url IS NULL)
+                SELECT a.*, s.name AS source_name,
+                       COALESCE((
+                           SELECT array_agg(t.category)
+                           FROM article_topics t
+                           WHERE t.article_id = a.id
+                       ), ARRAY[a.category]) AS topics
+                FROM articles a
+                JOIN sources s ON s.id = a.source_id
+                WHERE a.id=$1
                 """,
-                (item.image_url, item.title_norm),
+                article_id,
             )
-        await self.conn.commit()
+        article = _article(row) if row else None
+        return article
 
     async def translation_hashes(self, lang: str, article_ids: list[int]) -> dict[int, str]:
         if not article_ids:
             return {}
-        marks = ",".join("?" for _ in article_ids)
-        cursor = await self.conn.execute(
-            f"SELECT article_id, source_hash FROM translations WHERE lang=? AND article_id IN ({marks})",
-            (lang, *article_ids),
-        )
-        rows = await cursor.fetchall()
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT article_id, source_hash
+                FROM translations
+                WHERE lang=$1 AND article_id = ANY($2::int[])
+                """,
+                lang,
+                article_ids,
+            )
         return {int(row["article_id"]): str(row["source_hash"]) for row in rows}
 
-    async def articles_missing_translation(
-        self, lang: str, limit: int, *, full_only: bool = False
-    ) -> list[Article]:
-        full_filter = (
-            " AND length(a.body) >= 900 "
-            "AND length(a.body) >= length(a.summary) + 400"
-            if full_only
-            else ""
-        )
-        cursor = await self.conn.execute(
-            f"""
-            SELECT a.*
-            FROM articles a
-            LEFT JOIN translations t ON t.article_id = a.id AND t.lang = ?
-            WHERE t.article_id IS NULL{full_filter}
-            ORDER BY a.published_at DESC, a.id DESC
-            LIMIT ?
-            """,
-            (lang, limit),
-        )
-        missing = [_article(row) for row in await cursor.fetchall()]
+    async def articles_missing_translation(self, lang: str, limit: int) -> list[Article]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT a.*, s.name AS source_name,
+                       COALESCE((
+                           SELECT array_agg(t.category)
+                           FROM article_topics t
+                           WHERE t.article_id = a.id
+                       ), ARRAY[a.category]) AS topics
+                FROM articles a
+                JOIN sources s ON s.id = a.source_id
+                LEFT JOIN translations t ON t.article_id = a.id AND t.lang = $1
+                WHERE t.article_id IS NULL
+                ORDER BY a.published_at DESC, a.id DESC
+                LIMIT $2
+                """,
+                lang,
+                limit,
+            )
+        missing = [_article(row) for row in rows]
         if len(missing) >= limit:
             return missing
         seen = {article.id for article in missing}
-        recent = await self.recent(80, full_only=full_only)
+        recent = await self.recent(80)
         hashes = await self.translation_hashes(lang, [article.id for article in recent])
         for article in recent:
             if len(missing) >= limit or article.id in seen:
@@ -664,47 +948,61 @@ class Database:
                 seen.add(article.id)
         return missing
 
-    async def save_translations(self, lang: str, rows: list[tuple[Article, str, str, str]]) -> None:
-        now = utc_now_iso()
-        for article, title, summary, body in rows:
-            await self.conn.execute(
-                """
-                INSERT INTO translations (
-                    article_id, lang, title, summary, body, source_hash, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(article_id, lang) DO UPDATE SET
-                    title=excluded.title,
-                    summary=excluded.summary,
-                    body=excluded.body,
-                    source_hash=excluded.source_hash,
-                    created_at=excluded.created_at
-                """,
-                (article.id, lang, title, summary, body, source_hash(article), now),
-            )
-        await self.conn.commit()
+    async def save_translations(
+        self, lang: str, rows: list[tuple[Article, str, str, str, tuple[str, ...]]]
+    ) -> None:
+        now = utc_now()
+        async with self.pool.acquire() as conn:
+            for article, title, summary, body, topics in rows:
+                await conn.execute(
+                    """
+                    INSERT INTO translations (
+                        article_id, lang, title, summary, body, source_hash, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (article_id, lang) DO UPDATE SET
+                        title=EXCLUDED.title,
+                        summary=EXCLUDED.summary,
+                        body=EXCLUDED.body,
+                        source_hash=EXCLUDED.source_hash,
+                        created_at=EXCLUDED.created_at
+                    """,
+                    article.id,
+                    lang,
+                    title,
+                    summary,
+                    body,
+                    source_hash(article),
+                    now,
+                )
+                if topics:
+                    await self._replace_topics(conn, article.id, topics)
+                    await conn.execute(
+                        "UPDATE articles SET category=$1 WHERE id=$2",
+                        topics[0],
+                        article.id,
+                    )
 
     async def apply_translations(self, articles: list[Article], lang: str) -> list[Article]:
         if lang not in config.TRANSLATION_LANGS or not articles:
             return articles
         hashes = await self.translation_hashes(lang, [article.id for article in articles if article.id])
         if not hashes:
-            return articles
-        marks = ",".join("?" for _ in hashes)
-        cursor = await self.conn.execute(
-            f"""
-            SELECT article_id, title, summary, body, source_hash
-            FROM translations
-            WHERE lang=? AND article_id IN ({marks})
-            """,
-            (lang, *hashes.keys()),
-        )
-        rows = await cursor.fetchall()
+            return []
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT article_id, title, summary, body, source_hash
+                FROM translations
+                WHERE lang=$1 AND article_id = ANY($2::int[])
+                """,
+                lang,
+                list(hashes.keys()),
+            )
         by_id = {int(row["article_id"]): row for row in rows}
         localized: list[Article] = []
         for article in articles:
             row = by_id.get(article.id)
             if row is None or str(row["source_hash"]) != source_hash(article):
-                localized.append(article)
                 continue
             localized.append(
                 replace(
@@ -716,148 +1014,93 @@ class Database:
             )
         return localized
 
-    async def recent(self, limit: int, *, full_only: bool = False) -> list[Article]:
-        return await self.recent_for_user(None, limit, full_only=full_only)
-
-    async def recent_for_user(
-        self, user_id: int | None, limit: int, *, full_only: bool = False
-    ) -> list[Article]:
-        where = f"WHERE {_FULL_TEXT_SQL}" if full_only else ""
-        params: list[object] = []
-        if user_id is not None:
-            states = await self.source_states(user_id)
-            if not states:
-                return await self.recent(limit, full_only=full_only)
-            enabled = [key for key, value in states.items() if value]
-            if not enabled:
-                return []
-            marks = ",".join("?" for _ in enabled)
-            where += f" {'AND' if where else 'WHERE'} source_key IN ({marks})"
-            params.extend(enabled)
-        cursor = await self.conn.execute(
-            f"""
-            SELECT * FROM articles
-            {where}
-            ORDER BY published_at DESC, id DESC
-            LIMIT ?
-            """,
-            (*params, limit),
-        )
-        rows = await cursor.fetchall()
-        return [_article(row) for row in rows]
-
-    async def by_category(
-        self,
-        category: str,
-        limit: int,
-        *,
-        full_only: bool = False,
-        user_id: int | None = None,
-    ) -> list[Article]:
-        extra = f" AND {_FULL_TEXT_SQL}" if full_only else ""
-        params: list[object] = [category]
-        if user_id is not None:
-            states = await self.source_states(user_id)
-            enabled = [key for key, value in states.items() if value]
-            if not enabled:
-                return []
-            marks = ",".join("?" for _ in enabled)
-            extra += f" AND source_key IN ({marks})"
-            params.extend(enabled)
-        cursor = await self.conn.execute(
-            f"""
-            SELECT * FROM articles
-            WHERE category=?{extra}
-            ORDER BY published_at DESC, id DESC
-            LIMIT ?
-            """,
-            (*params, limit),
-        )
-        rows = await cursor.fetchall()
-        return [_article(row) for row in rows]
-
-    async def get_article(self, article_id: int) -> Article | None:
-        cursor = await self.conn.execute("SELECT * FROM articles WHERE id=?", (article_id,))
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return _article(row)
-
-    async def title_norms(self) -> set[str]:
-        cursor = await self.conn.execute("SELECT title_norm FROM articles")
-        rows = await cursor.fetchall()
-        return {row["title_norm"] for row in rows}
-
     async def delete_old(self, days: int) -> int:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        cursor = await self.conn.execute("DELETE FROM articles WHERE published_at < ?", (cutoff,))
-        await self.conn.commit()
-        return cursor.rowcount or 0
+        cutoff = utc_now() - timedelta(days=days)
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM articles WHERE published_at < $1",
+                cutoff,
+            )
+        return int(result.split()[-1]) if result.startswith("DELETE") else 0
 
     async def meta_get(self, key: str) -> str | None:
-        cursor = await self.conn.execute("SELECT value FROM meta WHERE key=?", (key,))
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return str(row["value"])
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval("SELECT value FROM meta WHERE key=$1", key)
+        return str(value) if value is not None else None
 
     async def meta_set(self, key: str, value: str) -> None:
-        await self.conn.execute(
-            """
-            INSERT INTO meta (key, value) VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value
-            """,
-            (key, value),
-        )
-        await self.conn.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO meta (key, value) VALUES ($1, $2)
+                ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
+                """,
+                key,
+                value,
+            )
+
+    async def quota_used_today(self) -> int:
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT used FROM api_quota WHERE day = CURRENT_DATE"
+            )
+        return int(value or 0)
+
+    async def quota_remaining(self) -> int:
+        return max(0, config.GNEWS_DAILY_LIMIT - await self.quota_used_today())
+
+    async def quota_consume(self, n: int = 1) -> bool:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO api_quota(day, used) VALUES (CURRENT_DATE, $1)
+                ON CONFLICT (day) DO UPDATE SET used = api_quota.used + EXCLUDED.used
+                WHERE api_quota.used + EXCLUDED.used <= $2
+                RETURNING used
+                """,
+                n,
+                config.GNEWS_DAILY_LIMIT,
+            )
+        return row is not None
 
     async def list_digest_subscribers(self) -> list[User]:
-        cursor = await self.conn.execute(
-            "SELECT * FROM users WHERE notifications=1 AND blocked=0"
-        )
-        rows = await cursor.fetchall()
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM users WHERE notifications=TRUE AND blocked=FALSE"
+            )
         return [_user(row) for row in rows]
 
-    async def list_paid_users(self) -> list[User]:
-        cursor = await self.conn.execute(
-            "SELECT * FROM users WHERE blocked=0 AND plan IN ('plus','pro')"
-        )
-        return [user for user in [_user(row) for row in await cursor.fetchall()] if user.premium_active()]
-
-    async def paid_catalog_keys(self, plan: str | None = None) -> set[str]:
-        keys: set[str] = set()
-        for user in await self.list_paid_users():
-            if plan and user.plan != plan:
-                continue
-            keys.update(item.key for item in await self.active_sources(user.user_id) if not item.custom)
-        return keys
-
     async def mark_digest_sent(self, user_id: int, day: str) -> None:
-        await self.conn.execute(
-            "UPDATE users SET last_digest_on=? WHERE user_id=?",
-            (day, user_id),
-        )
-        await self.conn.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET last_digest_on=$1 WHERE user_id=$2",
+                day,
+                user_id,
+            )
 
     async def set_blocked(self, user_id: int, blocked: bool) -> None:
-        await self.conn.execute(
-            "UPDATE users SET blocked=? WHERE user_id=?",
-            (1 if blocked else 0, user_id),
-        )
-        await self.conn.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET blocked=$1 WHERE user_id=$2",
+                blocked,
+                user_id,
+            )
 
     async def save_payment(self, charge_id: str, user_id: int, amount: int) -> bool:
         try:
-            await self.conn.execute(
-                """
-                INSERT INTO payments (charge_id, user_id, amount, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (charge_id, user_id, amount, utc_now_iso()),
-            )
-            await self.conn.commit()
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO payments (charge_id, user_id, amount, created_at)
+                    VALUES ($1, $2, $3, $4)
+                    """,
+                    charge_id,
+                    user_id,
+                    amount,
+                    utc_now(),
+                )
             return True
-        except aiosqlite.IntegrityError:
+        except asyncpg.UniqueViolationError:
             return False
 
     async def extend_premium(self, user_id: int, days: int) -> User:
@@ -865,7 +1108,7 @@ class Database:
 
     async def extend_plan(self, user_id: int, plan: str, days: int) -> User:
         user = await self.require_user(user_id)
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         base = now
         if user.premium_active(now) and user.premium_until:
             parsed = datetime.fromisoformat(user.premium_until)
@@ -873,31 +1116,43 @@ class Database:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             base = parsed
         until = (base + timedelta(days=days)).astimezone(timezone.utc)
-        stamp = until.strftime("%Y-%m-%dT%H:%M:%SZ")
-        return await self._update_user(
-            user_id,
-            "UPDATE users SET premium_until=?, plan=?, subscribed_at=COALESCE(subscribed_at, ?) WHERE user_id=?",
-            (stamp, plan, utc_now_iso()),
-        )
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE users
+                SET premium_until=$1, plan=$2, subscribed_at=COALESCE(subscribed_at, $3)
+                WHERE user_id=$4
+                """,
+                until,
+                plan,
+                now,
+                user_id,
+            )
+            return await self._fetch_user_after(conn, user_id)
 
     async def revoke_plan(self, user_id: int) -> User:
-        return await self._update_user(
-            user_id,
-            "UPDATE users SET plan='base', premium_until=NULL WHERE user_id=?",
-            (),
-        )
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET plan='base', premium_until=NULL WHERE user_id=$1",
+                user_id,
+            )
+            return await self._fetch_user_after(conn, user_id)
 
     async def record_admin_action(
         self, admin_user_id: int, target_user_id: int, action: str, plan: str | None = None
     ) -> None:
-        await self.conn.execute(
-            """
-            INSERT INTO admin_actions(admin_user_id, target_user_id, action, plan, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (admin_user_id, target_user_id, action, plan, utc_now_iso()),
-        )
-        await self.conn.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO admin_actions(admin_user_id, target_user_id, action, plan, created_at)
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                admin_user_id,
+                target_user_id,
+                action,
+                plan,
+                utc_now(),
+            )
 
     async def admin_grant(self, admin_user_id: int, user_id: int, plan: str, days: int) -> User:
         if admin_user_id != config.ADMIN_USER_ID:
@@ -918,9 +1173,7 @@ class Database:
         return user
 
 
-def _user(row: aiosqlite.Row) -> User:
-    premium = row["premium_until"]
-    last = row["last_digest_on"]
+def _user(row: asyncpg.Record) -> User:
     return User(
         user_id=int(row["user_id"]),
         lang=row["lang"] or "ru",
@@ -929,32 +1182,48 @@ def _user(row: aiosqlite.Row) -> User:
         timezone=row["timezone"],
         interactions=int(row["interactions"]),
         full_reads=int(row["full_reads"]),
-        premium_until=str(premium) if premium else None,
-        last_digest_on=str(last) if last else None,
+        premium_until=_iso(row["premium_until"]),
+        last_digest_on=str(row["last_digest_on"]) if row["last_digest_on"] else None,
         blocked=bool(row["blocked"]),
-        plan=str(row["plan"] or "base") if "plan" in row.keys() else "base",
-        source_pending=bool(row["source_pending"]) if "source_pending" in row.keys() else False,
-        subscribed_at=str(row["subscribed_at"]) if "subscribed_at" in row.keys() and row["subscribed_at"] else None,
+        plan=str(row["plan"] or "base"),
+        subscribed_at=_iso(row["subscribed_at"]),
     )
 
 
-def _source(row: aiosqlite.Row) -> Source:
+def _topics(row: asyncpg.Record) -> tuple[str, ...]:
+    if "topics" in row.keys() and row["topics"]:
+        values = [str(item) for item in row["topics"] if item]
+        if values:
+            return tuple(values)
+    category = str(row["category"]) if "category" in row.keys() else "markets"
+    return (category,)
+
+
+def _source(row: asyncpg.Record) -> Source:
+    extra = row["extra"] or {}
+    if isinstance(extra, str):
+        extra = json.loads(extra)
     return Source(
-        key=str(row["source_key"]),
+        id=int(row["id"]),
         name=str(row["name"]),
-        url=str(row["feed_url"]),
-        homepage=str(row["homepage"] or ""),
-        owner_user_id=int(row["owner_user_id"]) if row["owner_user_id"] is not None else None,
-        custom=bool(row["custom"]),
+        url=str(row["url"] or ""),
+        lang=str(row["lang"]),
+        extra=extra if isinstance(extra, dict) else {},
+        article_count=int(row["article_count"]) if "article_count" in row.keys() else 0,
+        headline_rank=(
+            int(row["headline_rank"])
+            if "headline_rank" in row.keys() and row["headline_rank"] is not None
+            else None
+        ),
     )
 
 
-def _article(row: aiosqlite.Row) -> Article:
+def _article(row: asyncpg.Record) -> Article:
     return Article(
         id=int(row["id"]),
         guid=row["guid"],
-        source_key=row["source_key"],
-        source_name=row["source_name"],
+        source_id=int(row["source_id"]),
+        source_name=str(row["source_name"]),
         title=row["title"],
         title_norm=row["title_norm"],
         summary=row["summary"],
@@ -962,8 +1231,10 @@ def _article(row: aiosqlite.Row) -> Article:
         url=row["url"],
         image_url=row["image_url"] or "",
         category=row["category"],
-        published_at=row["published_at"],
-        fetched_at=row["fetched_at"],
-        full_checked=bool(row["full_checked"]) if "full_checked" in row.keys() else False,
-        catalog_visible=bool(row["catalog_visible"]) if "catalog_visible" in row.keys() else True,
+        published_at=_iso(row["published_at"]) or "",
+        fetched_at=_iso(row["fetched_at"]) or "",
+        lang=str(row["lang"]),
+        origin=str(row["origin"]) if "origin" in row.keys() and row["origin"] else "search",
+        top_rank=int(row["top_rank"]) if "top_rank" in row.keys() and row["top_rank"] is not None else None,
+        categories=_topics(row),
     )

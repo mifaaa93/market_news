@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 CATEGORIES = ("stocks", "oil", "macro", "crypto", "markets")
@@ -12,7 +12,7 @@ CATEGORIES = ("stocks", "oil", "macro", "crypto", "markets")
 class Article:
     id: int
     guid: str
-    source_key: str
+    source_id: int
     source_name: str
     title: str
     title_norm: str
@@ -23,18 +23,21 @@ class Article:
     published_at: str
     fetched_at: str
     image_url: str = ""
-    full_checked: bool = False
-    catalog_visible: bool = True
+    lang: str = "en"
+    origin: str = "search"
+    top_rank: int | None = None
+    categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class Source:
-    key: str
+    id: int
     name: str
     url: str
-    homepage: str
-    owner_user_id: int | None = None
-    custom: bool = False
+    lang: str
+    extra: dict = field(default_factory=dict)
+    article_count: int = 0
+    headline_rank: int | None = None
 
 
 @dataclass(frozen=True)
@@ -50,7 +53,6 @@ class User:
     last_digest_on: str | None
     blocked: bool
     plan: str = "base"
-    source_pending: bool = False
     subscribed_at: str | None = None
 
     def premium_active(self, now: datetime | None = None) -> bool:
@@ -69,3 +71,8 @@ class User:
 
     def is_pro(self, now: datetime | None = None) -> bool:
         return self.plan == "pro" and self.premium_active(now)
+
+    def active_plan(self, now: datetime | None = None) -> str:
+        if self.premium_active(now):
+            return self.plan
+        return "base"
