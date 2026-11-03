@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS articles (
     fetched_at TIMESTAMPTZ NOT NULL,
     first_seen_at TIMESTAMPTZ NOT NULL,
     origin TEXT NOT NULL DEFAULT 'search',
-    top_rank INTEGER
+    top_rank INTEGER,
+    telegram_photo_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_published ON articles(published_at DESC, id DESC);
@@ -190,6 +191,7 @@ class Database:
                 "ALTER TABLE articles ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'search'"
             )
             await conn.execute("ALTER TABLE articles ADD COLUMN IF NOT EXISTS top_rank INTEGER")
+            await conn.execute("ALTER TABLE articles ADD COLUMN IF NOT EXISTS telegram_photo_id TEXT")
         await self.backfill_topics()
 
     async def reset_all(self) -> None:
@@ -962,6 +964,34 @@ class Database:
         article = _article(row) if row else None
         return article
 
+    async def articles_missing_photo(self, limit: int) -> list[Article]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT a.*, s.name AS source_name,
+                       COALESCE((
+                           SELECT array_agg(t.category)
+                           FROM article_topics t
+                           WHERE t.article_id = a.id
+                       ), ARRAY[a.category]) AS topics
+                FROM articles a
+                JOIN sources s ON s.id = a.source_id
+                WHERE a.image_url <> '' AND a.telegram_photo_id IS NULL
+                ORDER BY a.top_rank NULLS LAST, a.published_at DESC, a.id DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        return [_article(row) for row in rows]
+
+    async def save_photo_id(self, article_id: int, file_id: str) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE articles SET telegram_photo_id=$1 WHERE id=$2",
+                file_id,
+                article_id,
+            )
+
     async def translation_hashes(self, lang: str, article_ids: list[int]) -> dict[int, str]:
         if not article_ids:
             return {}
@@ -1339,4 +1369,9 @@ def _article(row: asyncpg.Record) -> Article:
         origin=str(row["origin"]) if "origin" in row.keys() and row["origin"] else "search",
         top_rank=int(row["top_rank"]) if "top_rank" in row.keys() and row["top_rank"] is not None else None,
         categories=_topics(row),
+        telegram_photo_id=(
+            str(row["telegram_photo_id"])
+            if "telegram_photo_id" in row.keys() and row["telegram_photo_id"]
+            else ""
+        ),
     )

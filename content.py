@@ -495,10 +495,10 @@ def _e(value: str) -> str:
 
 
 def _figure(article: Article) -> str:
-    if not article.image_url:
+    if not (article.telegram_photo_id or "").strip():
         return ""
     return (
-        f'<figure><img src="{_e(article.image_url)}"/>'
+        '<figure><img src="tg://photo?id=cover"/>'
         f"<figcaption><cite>{_e(article.source_name)}</cite></figcaption></figure>"
     )
 

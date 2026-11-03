@@ -27,6 +27,7 @@ class Article:
     origin: str = "search"
     top_rank: int | None = None
     categories: tuple[str, ...] = ()
+    telegram_photo_id: str = ""
 
 
 @dataclass(frozen=True)

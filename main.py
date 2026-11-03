@@ -191,17 +191,17 @@ async def _enable_catalog_source(user: User, source) -> str:
 
 
 async def _open_article(query: CallbackQuery, user: User, article_id: int, origin: str) -> None:
+    await ack(query)
+    if query.message is None:
+        return
     article = await _db().get_article(article_id)
-    if article is None or query.message is None:
-        await ack(query)
-        if query.message is not None:
-            await show_edit(query.message, t(user.lang, "no_article"), home_keyboard(user.lang))
+    if article is None:
+        await show_edit(query.message, t(user.lang, "no_article"), home_keyboard(user.lang))
         return
     user = await _db().add_interaction(user.user_id)
     await _db().mark_seen(user.user_id, article.id)
-    await ack(query)
     text, markup = await article_screen(_db(), user, article, origin)
-    await show_edit(query.message, text, markup)
+    await show_edit(query.message, text, markup, article.telegram_photo_id)
 
 
 async def _content(query: CallbackQuery, user: User, builder) -> None:
@@ -546,19 +546,19 @@ async def on_action(
         return
 
     if action == FULL:
+        await ack(query)
         article = await _db().get_article(callback_data.i)
         if article is None:
-            await ack(query)
             await show_edit(message, t(db_user.lang, "no_article"), home_keyboard(db_user.lang))
             return
         user = await _db().add_interaction(db_user.user_id, full_read=True)
         await _db().mark_seen(user.user_id, article.id)
-        await ack(query)
         text, markup = await full_screen(_db(), user, article, callback_data.c or "-")
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, article.telegram_photo_id)
         return
 
     if action == NEXT:
+        await ack(query)
         origin = callback_data.c or "-"
         items = await articles_for_origin(_db(), origin, db_user.lang, db_user.user_id)
         if not items:

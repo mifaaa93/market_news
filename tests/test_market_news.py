@@ -6,6 +6,7 @@ import os
 import unittest
 from datetime import datetime, timezone
 
+from images import to_jpeg
 from content import (
     classify,
     classify_topics,
@@ -312,6 +313,18 @@ class GNewsTests(unittest.TestCase):
         self.assertEqual(item.lang, "en")
         self.assertEqual(item.category, "oil")
         self.assertTrue(item.url.startswith("https://www.reuters.com/"))
+
+    def test_to_jpeg_from_png_bytes(self) -> None:
+        from io import BytesIO
+
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.new("RGB", (12, 12), color=(20, 80, 160)).save(buf, format="PNG")
+        jpeg = to_jpeg(buf.getvalue())
+        self.assertIsNotNone(jpeg)
+        self.assertGreater(len(jpeg or b""), 20)
+        self.assertEqual(jpeg[:2], b"\xff\xd8")
 
     def test_parse_translation_payload(self) -> None:
         rows = parse_translation_payload(

@@ -77,6 +77,9 @@ TRANSLATION_LANGS = tuple(
     for part in _translation_langs.split(",")
     if part.strip() in INTERFACE_LANGS and part.strip() != "en"
 )
+IMAGE_CACHE_CHAT_ID = _int("IMAGE_CACHE_CHAT_ID", ADMIN_USER_ID, 1)
+IMAGE_BATCH_LIMIT = _int("IMAGE_BATCH_LIMIT", 4, 1)
+
 CVC_API_KEY = os.getenv("CVC_API_KEY", "").strip()
 CVC_BASE_URL = os.getenv("CVC_BASE_URL", "https://ru.cheapvibecode.ru/v1").strip().rstrip("/")
 

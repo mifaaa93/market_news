@@ -15,6 +15,7 @@ from content import digest_due, render_digest, safe_zone, source_hash
 from db import Database, utc_now, utc_now_iso
 from gnews import UA, fetch_lang, mark_origin, parse_articles, requests_per_cycle
 from keyboards import digest_keyboard, push_keyboard
+from images import cache_pending_photos
 from translate import translate_pending
 from ui import deliver
 
@@ -81,12 +82,18 @@ async def refresh_search(database: Database, bot: Bot | None = None) -> int:
 
 async def translation_worker(database: Database, bot: Bot | None = None) -> int:
     sent = await push_new_articles(database, bot)
+    photos = await cache_pending_photos(database, bot, limit=config.IMAGE_BATCH_LIMIT)
     translated = 0
     if config.CVC_API_KEY:
         translated = await translate_pending(database, limit=config.TRANSLATION_BATCH_LIMIT)
     sent += await push_new_articles(database, bot)
-    if translated or sent:
-        log.info("translation worker: translated=%s pushed=%s", translated, sent)
+    if translated or sent or photos:
+        log.info(
+            "translation worker: translated=%s pushed=%s photos=%s",
+            translated,
+            sent,
+            photos,
+        )
     return translated
 
 
