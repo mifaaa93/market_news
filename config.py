@@ -69,6 +69,38 @@ GNEWS_QUERY = os.getenv(
     "stock OR stocks OR oil OR crypto OR economy OR market OR nasdaq",
 ).strip()
 
+PINNED_SOURCE_KEYS = (
+    "reuters.com",
+    "bbc.com",
+    "bbc.co.uk",
+    "cnbc.com",
+    "theguardian.com",
+    "bloomberg.com",
+    "yahoo.com",
+    "ft.com",
+    "wsj.com",
+    "apnews.com",
+    "businessinsider.com",
+    "forbes.com",
+    "economist.com",
+    "marketwatch.com",
+    "seekingalpha.com",
+    "aljazeera.com",
+    "nytimes.com",
+    "nasdaq.com",
+    "oilprice.com",
+    "coindesk.com",
+    "cnn.com",
+)
+
+
+def source_pin_order(name: str, url: str) -> int | None:
+    blob = f"{name} {url}".lower()
+    for index, key in enumerate(PINNED_SOURCE_KEYS, start=1):
+        if key in blob:
+            return index
+    return None
+
 TRANSLATION_WORKER_SECONDS = _int("TRANSLATION_WORKER_SECONDS", 10, 1)
 TRANSLATION_BATCH_LIMIT = _int("TRANSLATION_BATCH_LIMIT", 16, 1)
 _translation_langs = os.getenv("TRANSLATION_LANGS", "ru,ar")

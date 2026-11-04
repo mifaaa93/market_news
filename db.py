@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS sources (
     lang TEXT NOT NULL DEFAULT 'en',
     extra JSONB NOT NULL DEFAULT '{}'::jsonb,
     first_seen_at TIMESTAMPTZ NOT NULL,
-    last_seen_at TIMESTAMPTZ NOT NULL
+    last_seen_at TIMESTAMPTZ NOT NULL,
+    pin_order INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS articles (
@@ -192,7 +193,9 @@ class Database:
             )
             await conn.execute("ALTER TABLE articles ADD COLUMN IF NOT EXISTS top_rank INTEGER")
             await conn.execute("ALTER TABLE articles ADD COLUMN IF NOT EXISTS telegram_photo_id TEXT")
+            await conn.execute("ALTER TABLE sources ADD COLUMN IF NOT EXISTS pin_order INTEGER")
         await self.backfill_topics()
+        await self.backfill_pins()
 
     async def reset_all(self) -> None:
         async with self.pool.acquire() as conn:
@@ -360,17 +363,19 @@ class Database:
         extra: dict,
         seen_at: datetime,
     ) -> int:
+        pin_order = config.source_pin_order(name, url)
         row = await conn.fetchrow(
             """
-            INSERT INTO sources (name, url, lang, extra, first_seen_at, last_seen_at)
-            VALUES ($1, $2, $3, $4::jsonb, $5, $5)
+            INSERT INTO sources (name, url, lang, extra, first_seen_at, last_seen_at, pin_order)
+            VALUES ($1, $2, $3, $4::jsonb, $5, $5, $6)
             ON CONFLICT (name) DO UPDATE SET
                 url = CASE WHEN EXCLUDED.url <> '' THEN EXCLUDED.url ELSE sources.url END,
                 extra = CASE
                     WHEN EXCLUDED.extra = '{}'::jsonb THEN sources.extra
                     ELSE EXCLUDED.extra
                 END,
-                last_seen_at = EXCLUDED.last_seen_at
+                last_seen_at = EXCLUDED.last_seen_at,
+                pin_order = EXCLUDED.pin_order
             RETURNING id
             """,
             name,
@@ -378,8 +383,20 @@ class Database:
             lang,
             extra,
             seen_at,
+            pin_order,
         )
         return int(row["id"])
+
+    async def backfill_pins(self) -> None:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT id, name, url FROM sources")
+            for row in rows:
+                order = config.source_pin_order(str(row["name"]), str(row["url"] or ""))
+                await conn.execute(
+                    "UPDATE sources SET pin_order=$1 WHERE id=$2",
+                    order,
+                    int(row["id"]),
+                )
 
     async def ingest_articles(self, items: list[IncomingArticle]) -> int:
         if not items:
@@ -560,11 +577,11 @@ class Database:
                 """
                 SELECT s.*,
                        COUNT(a.id) AS article_count,
-                       MIN(a.top_rank) AS headline_rank
+                       s.pin_order AS headline_rank
                 FROM sources s
                 LEFT JOIN articles a ON a.source_id = s.id
                 GROUP BY s.id
-                ORDER BY MIN(a.top_rank) NULLS LAST, COUNT(a.id) DESC, s.name
+                ORDER BY s.pin_order NULLS LAST, COUNT(a.id) DESC, s.name
                 OFFSET $1 LIMIT $2
                 """,
                 offset,
@@ -611,7 +628,7 @@ class Database:
                 LEFT JOIN articles a ON a.source_id = s.id
                 WHERE us.user_id=$1 AND us.enabled
                 GROUP BY us.source_id
-                ORDER BY MIN(a.top_rank) NULLS LAST, COUNT(a.id) DESC, MIN(s.name)
+                ORDER BY MIN(s.pin_order) NULLS LAST, COUNT(a.id) DESC, MIN(s.name)
                 LIMIT $2
                 """,
                 user_id,
@@ -654,14 +671,14 @@ class Database:
                 """
                 SELECT s.*,
                        COUNT(a.id) AS article_count,
-                       MIN(a.top_rank) AS headline_rank
+                       s.pin_order AS headline_rank
                 FROM sources s
                 LEFT JOIN articles a ON a.source_id = s.id
                 WHERE s.name ILIKE $1
                    OR s.url ILIKE $1
                    OR ($2::text IS NOT NULL AND s.url ILIKE '%' || $2 || '%')
                 GROUP BY s.id
-                ORDER BY MIN(a.top_rank) NULLS LAST, COUNT(a.id) DESC, s.name
+                ORDER BY s.pin_order NULLS LAST, COUNT(a.id) DESC, s.name
                 LIMIT $3
                 """,
                 pattern,
@@ -688,9 +705,8 @@ class Database:
                     """
                     SELECT s.id
                     FROM sources s
-                    JOIN articles a ON a.source_id = s.id AND a.top_rank IS NOT NULL
-                    GROUP BY s.id
-                    ORDER BY MIN(a.top_rank) ASC, MIN(s.name)
+                    WHERE s.pin_order IS NOT NULL
+                    ORDER BY s.pin_order ASC, s.name
                     LIMIT $1
                     """,
                     limit,
@@ -705,9 +721,8 @@ class Database:
                 """
                 SELECT s.id
                 FROM sources s
-                JOIN articles a ON a.source_id = s.id AND a.top_rank IS NOT NULL
-                GROUP BY s.id
-                ORDER BY MIN(a.top_rank) ASC, MIN(s.name)
+                WHERE s.pin_order IS NOT NULL
+                ORDER BY s.pin_order ASC, s.name
                 """
             )
         for row in rows:
@@ -1331,6 +1346,13 @@ def _topics(row: asyncpg.Record) -> tuple[str, ...]:
     return (category,)
 
 
+def _pin_rank(row: asyncpg.Record) -> int | None:
+    for key in ("headline_rank", "pin_order"):
+        if key in row.keys() and row[key] is not None:
+            return int(row[key])
+    return None
+
+
 def _source(row: asyncpg.Record) -> Source:
     extra = row["extra"] or {}
     if isinstance(extra, str):
@@ -1342,11 +1364,7 @@ def _source(row: asyncpg.Record) -> Source:
         lang=str(row["lang"]),
         extra=extra if isinstance(extra, dict) else {},
         article_count=int(row["article_count"]) if "article_count" in row.keys() else 0,
-        headline_rank=(
-            int(row["headline_rank"])
-            if "headline_rank" in row.keys() and row["headline_rank"] is not None
-            else None
-        ),
+        headline_rank=_pin_rank(row),
     )
 
 

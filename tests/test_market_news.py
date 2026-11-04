@@ -175,6 +175,11 @@ class ContentTests(unittest.TestCase):
         self.assertIsNone(host)
         _, host = source_search_terms("https://www.reuters.com/world/asia")
         self.assertEqual(host, "reuters.com")
+        from config import source_pin_order
+
+        self.assertEqual(source_pin_order("Reuters", "https://www.reuters.com"), 1)
+        self.assertIsNotNone(source_pin_order("Yahoo Finance", "https://finance.yahoo.com"))
+        self.assertIsNone(source_pin_order("Hortidaily", "https://www.hortidaily.com"))
 
     def test_title_norm_keeps_non_latin(self) -> None:
         self.assertIn("нефть", title_norm("Цены на нефть выросли"))
