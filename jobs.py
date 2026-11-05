@@ -13,7 +13,15 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, Teleg
 import config
 from content import digest_due, render_article, safe_zone, source_hash
 from db import Database, utc_now, utc_now_iso
-from gnews import UA, fetch_lang, mark_origin, parse_articles, requests_per_cycle
+from gnews import (
+    UA,
+    fetch_lang,
+    is_quality_search_article,
+    mark_origin,
+    parse_articles,
+    requests_per_cycle,
+    search_due,
+)
 from keyboards import article_keyboard, digest_keyboard
 from images import cache_pending_photos
 from translate import translate_pending
@@ -73,6 +81,8 @@ async def refresh_search(database: Database, bot: Bot | None = None) -> int:
     if _REFRESH_LOCK.locked():
         log.info("search refresh skipped: another refresh is still running")
         return 0
+    if not search_due(await database.meta_get("fetched_at")):
+        return 0
     async with _REFRESH_LOCK:
         saved = await poll_gnews(database, "search")
         if saved:
@@ -130,6 +140,15 @@ async def poll_gnews(database: Database, kind: str) -> int:
     headers = {"User-Agent": UA, "Accept": "application/json"}
     saved = 0
     used = 0
+    query_index = 0
+    search_query = None
+    if kind == "search":
+        raw_index = await database.meta_get("search_query_index")
+        try:
+            query_index = int(raw_index or "0") % len(config.GNEWS_SEARCH_QUERIES)
+        except (TypeError, ValueError):
+            query_index = 0
+        search_query = config.GNEWS_SEARCH_QUERIES[query_index] or config.GNEWS_QUERY
     since = None
     if kind == "search":
         since = (
@@ -149,15 +168,26 @@ async def poll_gnews(database: Database, kind: str) -> int:
                 if used > 1:
                     await asyncio.sleep(1.1)
                 payload = await fetch_lang(
-                    session, lang, kind=kind, page=page, since=since
+                    session,
+                    lang,
+                    kind=kind,
+                    page=page,
+                    since=since,
+                    query=search_query,
                 )
                 if payload is None:
                     continue
-                items = mark_origin(
-                    parse_articles(payload, lang),
-                    kind,
-                    ranked=(kind == "top"),
-                )
+                parsed = parse_articles(payload, lang)
+                if kind == "search":
+                    before = len(parsed)
+                    parsed = [item for item in parsed if is_quality_search_article(item)]
+                    log.info(
+                        "search quality query=%s kept=%s dropped=%s",
+                        query_index,
+                        len(parsed),
+                        before - len(parsed),
+                    )
+                items = mark_origin(parsed, kind, ranked=(kind == "top"))
                 batch = 0
                 if kind == "top":
                     batch = await database.replace_top(lang, items)
@@ -176,6 +206,11 @@ async def poll_gnews(database: Database, kind: str) -> int:
     if saved or used:
         key = "fetched_top_at" if kind == "top" else "fetched_at"
         await database.meta_set(key, utc_now_iso())
+        if kind == "search":
+            await database.meta_set(
+                "search_query_index",
+                str((query_index + 1) % len(config.GNEWS_SEARCH_QUERIES)),
+            )
         removed = await database.delete_old(config.ARTICLE_KEEP_DAYS)
         await database.seed_missing_feeds()
         log.info(

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import os
 import unittest
+import dataclasses
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from images import to_jpeg
 from content import (
@@ -27,7 +30,15 @@ from content import (
     title_norm,
 )
 import config
-from gnews import headlines_params, parse_articles, parse_published, requests_per_cycle, search_params
+from gnews import (
+    headlines_params,
+    is_quality_search_article,
+    parse_articles,
+    parse_published,
+    requests_per_cycle,
+    search_due,
+    search_params,
+)
 from translate import parse_translation_payload
 from jobs import top_quota_reserve
 from keyboards import (
@@ -307,6 +318,96 @@ class GNewsTests(unittest.TestCase):
         self.assertEqual(params["lang"], "en")
         self.assertEqual(params["sortby"], "publishedAt")
         self.assertEqual(params["page"], "1")
+        self.assertEqual(params["in"], "title,description")
+        self.assertEqual(
+            search_params("en", query="oil OR Brent")["q"],
+            "oil OR Brent",
+        )
+        self.assertTrue(all(len(query) <= 200 for query in config.GNEWS_SEARCH_QUERIES))
+
+    def test_search_quality_filter(self) -> None:
+        good = _article(
+            title="Federal Reserve holds interest rates as inflation cools",
+            summary="Investors watched the central bank decision.",
+            body="Bond yields fell after the Federal Reserve published its decision.",
+            category="macro",
+        )
+        noise = _article(
+            title="UK households should stock up on essential foods before winter",
+            summary="A weather warning was issued.",
+            body="A weather warning was issued and households prepared supplies.",
+            category="markets",
+        )
+        from gnews import IncomingArticle
+
+        good_incoming = IncomingArticle(
+            guid=good.guid,
+            title=good.title,
+            title_norm=good.title_norm,
+            summary=good.summary,
+            body=good.body,
+            url=good.url,
+            image_url=good.image_url,
+            category=good.category,
+            published_at=good.published_at,
+            lang=good.lang,
+            source_name=good.source_name,
+            source_url="https://www.bbc.co.uk",
+            source_extra={},
+        )
+        noise_incoming = IncomingArticle(
+            guid=noise.guid,
+            title=noise.title,
+            title_norm=noise.title_norm,
+            summary=noise.summary,
+            body=noise.body,
+            url=noise.url,
+            image_url=noise.image_url,
+            category=noise.category,
+            published_at=noise.published_at,
+            lang=noise.lang,
+            source_name=noise.source_name,
+            source_url="https://www.example.com",
+            source_extra={},
+        )
+        self.assertTrue(is_quality_search_article(good_incoming))
+        self.assertFalse(is_quality_search_article(noise_incoming))
+        market = dataclasses.replace(
+            good_incoming,
+            title="Market traders celebrate town centre reopening",
+            summary="An annual festival opens in the town centre.",
+            body="An annual festival opens in the town centre.",
+            category="markets",
+        )
+        self.assertFalse(is_quality_search_article(market))
+
+    def test_search_cadence(self) -> None:
+        from unittest.mock import patch
+
+        with patch.object(config, "GNEWS_SEARCH_TIMEZONE", "UTC"):
+            last = "2026-11-05T06:45:00Z"
+            self.assertFalse(search_due(last, datetime(2026, 11, 5, 6, 50, tzinfo=timezone.utc)))
+            self.assertTrue(search_due(last, datetime(2026, 11, 5, 7, 0, tzinfo=timezone.utc)))
+            self.assertTrue(search_due(
+                "2026-11-05T12:00:05Z",
+                datetime(2026, 11, 5, 12, 1, tzinfo=timezone.utc),
+            ))
+            self.assertFalse(search_due(
+                "2026-11-05T12:00:05Z",
+                datetime(2026, 11, 5, 12, 0, 40, tzinfo=timezone.utc),
+            ))
+            self.assertFalse(search_due("2026-11-05T22:00:00Z", datetime(2026, 11, 5, 22, 15, tzinfo=timezone.utc)))
+            self.assertTrue(search_due("2026-11-05T22:00:00Z", datetime(2026, 11, 5, 22, 30, tzinfo=timezone.utc)))
+        with patch.object(config, "GNEWS_SEARCH_TIMEZONE", "Europe/Kiev"):
+            # In November Kyiv is UTC+2; the active period begins at 05:00 UTC.
+            self.assertEqual(
+                config.search_interval_minutes(datetime(2026, 11, 5, 5, tzinfo=timezone.utc)),
+                1,
+            )
+            self.assertEqual(
+                config.search_interval_minutes(datetime(2026, 11, 5, 22, tzinfo=timezone.utc)),
+                30,
+            )
 
     def test_top_quota_reserve(self) -> None:
         noon = datetime(2026, 3, 1, 12, 30, tzinfo=timezone.utc)
@@ -371,6 +472,59 @@ class GNewsTests(unittest.TestCase):
         from translate import normalize_topics
 
         self.assertEqual(normalize_topics(["Energy", "Equities", "markets"]), ("oil", "stocks"))
+
+
+class SearchPollingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_rotates_queries_and_filters_before_ingest(self) -> None:
+        from jobs import poll_gnews
+
+        data = {
+            "totalArticles": 2,
+            "articles": [
+                {
+                    "title": "Federal Reserve holds interest rates as inflation cools",
+                    "description": "The central bank's policy decision moved bond yields.",
+                    "content": "Investors assessed the decision and market impact.",
+                    "url": "https://example.com/fed-rates",
+                    "publishedAt": "2026-11-05T12:00:00Z",
+                    "source": {"name": "Example Business", "url": "https://example.com"},
+                },
+                {
+                    "title": "UK households should stock up on essential foods before winter",
+                    "description": "A weather warning for local households.",
+                    "content": "Households prepare for extreme weather.",
+                    "url": "https://example.com/stock-up",
+                    "publishedAt": "2026-11-05T12:01:00Z",
+                    "source": {"name": "Example Local", "url": "https://example.com"},
+                },
+            ],
+        }
+        meta = {"search_query_index": "0"}
+
+        async def meta_get(key: str) -> str | None:
+            return meta.get(key)
+
+        async def meta_set(key: str, value: str) -> None:
+            meta[key] = value
+
+        database = SimpleNamespace(
+            quota_remaining=AsyncMock(return_value=1000),
+            quota_consume=AsyncMock(return_value=True),
+            meta_get=AsyncMock(side_effect=meta_get),
+            meta_set=AsyncMock(side_effect=meta_set),
+            ingest_articles=AsyncMock(return_value=1),
+            delete_old=AsyncMock(return_value=0),
+            seed_missing_feeds=AsyncMock(),
+        )
+        with patch("jobs.fetch_lang", new_callable=AsyncMock, return_value=data) as fetch:
+            self.assertEqual(await poll_gnews(database, "search"), 1)
+            first = database.ingest_articles.call_args.args[0]
+            self.assertEqual([item.title for item in first], [data["articles"][0]["title"]])
+            self.assertEqual(fetch.call_args.kwargs["query"], config.GNEWS_SEARCH_QUERIES[0])
+            self.assertEqual(meta["search_query_index"], "1")
+            self.assertEqual(await poll_gnews(database, "search"), 1)
+            self.assertEqual(fetch.call_args.kwargs["query"], config.GNEWS_SEARCH_QUERIES[1])
+            self.assertEqual(meta["search_query_index"], "2")
 
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "TEST_DATABASE_URL is not set")

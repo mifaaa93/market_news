@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 
@@ -35,6 +36,138 @@ class IncomingArticle:
     origin: str = "search"
     top_rank: int | None = None
     categories: tuple[str, ...] = ()
+
+
+_SEARCH_STRONG_PATTERNS = (
+    r"\bstocks?\b",
+    r"\bshares?\b",
+    r"\bequities\b",
+    r"\bearnings?\b",
+    r"\bfinancial results?\b",
+    r"\bquarterly results?\b",
+    r"\bq[1-4]\b",
+    r"\brevenue\b",
+    r"\bprofit(?:s)?\b",
+    r"\bipo\b",
+    r"\bnasdaq\b",
+    r"\bnifty\b",
+    r"\bsensex\b",
+    r"\bbse\b",
+    r"\bfii\b",
+    r"\bipo(?:s)?\b",
+    r"\bmarket rally\b",
+    r"\bs&p\s*500\b",
+    r"\bwall street\b",
+    r"\boil\b",
+    r"\bcrude\b",
+    r"\bbrent\b",
+    r"\bwti\b",
+    r"\bopec\+?\b",
+    r"\bnatural gas\b",
+    r"\bgold\b",
+    r"\bcopper\b",
+    r"\binflation\b",
+    r"\bgdp\b",
+    r"\binterest rates?\b",
+    r"\bcentral bank\b",
+    r"\bfederal reserve\b",
+    r"\bthe fed\b",
+    r"\becb\b",
+    r"\brecession\b",
+    r"\bbond yields?\b",
+    r"\btreasur(?:y|ies)\b",
+    r"\bbitcoin\b",
+    r"\bethereum\b",
+    r"\bcrypto(?:currency)?\b",
+    r"\bblockchain\b",
+    r"\bforex\b",
+    r"\bcurrency\b",
+    r"\bdollar\b",
+    r"\byen\b",
+    r"\beuro\b",
+)
+
+_SEARCH_NOISE_PATTERNS = (
+    r"\bweather\b",
+    r"\bfoods?\b",
+    r"\bstock up\b",
+    r"\brecipe\b",
+    r"\bfootball\b",
+    r"\bsoccer\b",
+    r"\bcricket\b",
+    r"\bmovie\b",
+    r"\bfilm\b",
+    r"\bmusic\b",
+    r"\bcelebrity\b",
+    r"\btravel\b",
+    r"\btourism\b",
+    r"\bcars?\b",
+    r"\bvehicles?\b",
+    r"\baccident\b",
+    r"\bpolice\b",
+    r"\bcrime\b",
+    r"\bschool\b",
+    r"\bhospital\b",
+    r"\bobituary\b",
+    r"\bwedding\b",
+    r"\bquiz\b",
+    r"\bfestival\b",
+    r"\breopening\b",
+    r"\bprice prediction\b",
+    r"\bprice target\b",
+    r"\bto buy now\b",
+    r"\bstocks? to buy\b",
+    r"\bcryptos? to buy\b",
+    r"\bno.brainer\b",
+    r"\bhoroscope\b",
+    r"\bhow to invest\b",
+)
+
+
+def _term_hits(text: str, patterns: tuple[str, ...]) -> int:
+    lowered = text.casefold()
+    return sum(bool(re.search(pattern, lowered)) for pattern in patterns)
+
+
+def search_quality_score(item: IncomingArticle) -> int:
+    """Score a search result using the title first and description second."""
+    title_hits = _term_hits(item.title, _SEARCH_STRONG_PATTERNS)
+    body_hits = _term_hits(f"{item.summary}\n{item.body}", _SEARCH_STRONG_PATTERNS)
+    noise_hits = _term_hits(item.title, _SEARCH_NOISE_PATTERNS)
+    score = title_hits * 3 + body_hits - noise_hits * 4
+    if item.category != "markets":
+        score += 1
+    if config.source_pin_order(item.source_name, item.source_url) is not None:
+        score += 1
+    return score
+
+
+def is_quality_search_article(item: IncomingArticle) -> bool:
+    """Reject generic news where finance appears only incidentally."""
+    title_hits = _term_hits(item.title, _SEARCH_STRONG_PATTERNS)
+    if _term_hits(item.title, _SEARCH_NOISE_PATTERNS):
+        return False
+    score = search_quality_score(item)
+    return title_hits >= 1 and score >= 3
+
+
+def search_due(last_search_at: str | None, now: datetime | None = None) -> bool:
+    moment = now or datetime.now(timezone.utc)
+    if not last_search_at:
+        return True
+    try:
+        previous = datetime.strptime(last_search_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return True
+    # The scheduler fires on minute boundaries, but fetched_at is recorded
+    # *after* the API response. Compare minute buckets so a 2-second response
+    # does not turn a one-minute schedule into two minutes in practice.
+    elapsed = moment.replace(second=0, microsecond=0) - previous.replace(
+        second=0, microsecond=0
+    )
+    return elapsed >= timedelta(minutes=config.search_interval_minutes(moment))
 
 
 def parse_published(value: str, fallback: str) -> str:
@@ -113,14 +246,19 @@ def headlines_params(lang: str) -> dict[str, str]:
 
 
 def search_params(
-    lang: str, *, page: int = 1, since: str | None = None
+    lang: str,
+    *,
+    page: int = 1,
+    since: str | None = None,
+    query: str | None = None,
 ) -> dict[str, str]:
     params = {
-        "q": config.GNEWS_QUERY,
+        "q": query or config.GNEWS_QUERY,
         "lang": lang,
         "max": str(config.GNEWS_MAX),
         "sortby": "publishedAt",
         "page": str(max(1, page)),
+        "in": "title,description",
         "nullable": "image",
         "apikey": config.GNEWS_API_KEY,
     }
@@ -153,12 +291,13 @@ async def fetch_lang(
     kind: str,
     page: int = 1,
     since: str | None = None,
+    query: str | None = None,
 ) -> dict | None:
     if kind == "top":
         params = headlines_params(lang)
         path = "top-headlines"
     else:
-        params = search_params(lang, page=page, since=since)
+        params = search_params(lang, page=page, since=since, query=query)
         path = "search"
     url = f"{config.GNEWS_BASE_URL}/{path}"
     try:

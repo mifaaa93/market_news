@@ -906,11 +906,11 @@ async def run() -> None:
         scheduler.add_job(
             search_job,
             "interval",
-            minutes=config.GNEWS_SEARCH_MINUTES,
+            minutes=1,
             coalesce=True,
             max_instances=1,
             misfire_grace_time=120,
-            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=config.GNEWS_SEARCH_MINUTES),
+            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=1),
         )
         scheduler.add_job(
             top_job,

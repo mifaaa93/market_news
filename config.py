@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -57,7 +59,11 @@ GNEWS_API_KEY = os.getenv("GNEWS_API_KEY", "").strip()
 GNEWS_BASE_URL = os.getenv("GNEWS_BASE_URL", "https://gnews.io/api/v4").strip().rstrip("/")
 GNEWS_DAILY_LIMIT = _int("GNEWS_DAILY_LIMIT", 1000, 1)
 GNEWS_MAX = _int("GNEWS_MAX", 25, 1)
-GNEWS_SEARCH_MINUTES = _int("GNEWS_SEARCH_MINUTES", 2, 1)
+GNEWS_DAY_SEARCH_MINUTES = _int("GNEWS_DAY_SEARCH_MINUTES", 1, 1)
+GNEWS_NIGHT_SEARCH_MINUTES = _int("GNEWS_NIGHT_SEARCH_MINUTES", 30, 1)
+GNEWS_ACTIVE_START_HOUR = _int("GNEWS_ACTIVE_START_HOUR", 7, 0)
+GNEWS_ACTIVE_END_HOUR = _int("GNEWS_ACTIVE_END_HOUR", 22, 0)
+GNEWS_SEARCH_TIMEZONE = os.getenv("GNEWS_SEARCH_TIMEZONE", "Europe/Kiev")
 GNEWS_SEARCH_PAGES = _int("GNEWS_SEARCH_PAGES", 1, 1)
 GNEWS_TOP_HOURS = _hours("GNEWS_TOP_HOURS", "0,6,12,18")
 GNEWS_LANGS = ("en",)
@@ -66,8 +72,22 @@ GNEWS_CONTENT_LANG = "en"
 GNEWS_CATEGORY = os.getenv("GNEWS_CATEGORY", "business").strip() or "business"
 GNEWS_QUERY = os.getenv(
     "GNEWS_QUERY_EN",
-    "stock OR stocks OR oil OR crypto OR economy OR market OR nasdaq",
+    "stocks OR shares OR earnings OR IPO OR Nasdaq OR oil OR crude OR Brent OR OPEC OR inflation OR GDP OR crypto OR bitcoin",
 ).strip()
+GNEWS_SEARCH_QUERIES = (
+    os.getenv(
+        "GNEWS_QUERY_STOCKS",
+        '(stocks OR shares OR equities OR earnings OR results OR IPO OR Nasdaq OR "S&P 500" OR "Wall Street") AND (investors OR trading OR market)',
+    ).strip(),
+    os.getenv(
+        "GNEWS_QUERY_MACRO",
+        '(oil OR crude OR Brent OR OPEC OR "natural gas" OR gold OR copper OR inflation OR GDP OR "interest rates" OR "central bank") AND (prices OR market OR economy)',
+    ).strip(),
+    os.getenv(
+        "GNEWS_QUERY_CRYPTO",
+        '(bitcoin OR ethereum OR cryptocurrency OR "crypto market" OR blockchain) AND (investors OR trading OR prices)',
+    ).strip(),
+)
 
 PINNED_SOURCE_KEYS = (
     "reuters.com",
@@ -152,3 +172,17 @@ def source_limit_for(plan: str) -> int:
     if plan == "plus":
         return PLUS_SOURCE_LIMIT
     return BASE_SOURCE_LIMIT
+
+
+def search_interval_minutes(moment: datetime | None = None) -> int:
+    """Search cadence in the configured local timezone."""
+    try:
+        zone = ZoneInfo(GNEWS_SEARCH_TIMEZONE)
+    except (KeyError, ValueError):
+        zone = timezone.utc
+    hour = (moment or datetime.now(timezone.utc)).astimezone(zone).hour
+    start = min(GNEWS_ACTIVE_START_HOUR, 23)
+    end = min(GNEWS_ACTIVE_END_HOUR, 24)
+    if start < end and start <= hour < end:
+        return GNEWS_DAY_SEARCH_MINUTES
+    return GNEWS_NIGHT_SEARCH_MINUTES
