@@ -920,6 +920,7 @@ async def run() -> None:
     startup: asyncio.Task | None = None
     translation_task: asyncio.Task | None = None
     image_task: asyncio.Task | None = None
+    watchdog_task: asyncio.Task | None = None
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     loop = asyncio.get_running_loop()
     run_task = asyncio.current_task()
@@ -994,10 +995,16 @@ async def run() -> None:
         )
         scheduler.start()
 
+        heartbeat = {
+            "translation": datetime.now(timezone.utc),
+            "images": datetime.now(timezone.utc),
+        }
+
         async def translation_loop() -> None:
             while True:
                 try:
                     await translation_worker(database, bot)
+                    heartbeat["translation"] = datetime.now(timezone.utc)
                 except asyncio.CancelledError:
                     log.info("translation worker cancelled during shutdown")
                     raise
@@ -1009,6 +1016,7 @@ async def run() -> None:
             while True:
                 try:
                     await image_worker(database, bot)
+                    heartbeat["images"] = datetime.now(timezone.utc)
                 except asyncio.CancelledError:
                     log.info("image worker cancelled during shutdown")
                     raise
@@ -1018,6 +1026,48 @@ async def run() -> None:
 
         image_task = asyncio.create_task(image_loop())
         translation_task = asyncio.create_task(translation_loop())
+
+        async def worker_watchdog() -> None:
+            nonlocal translation_task, image_task
+            while True:
+                await asyncio.sleep(config.WORKER_WATCHDOG_CHECK_SECONDS)
+                now = datetime.now(timezone.utc)
+                for name, task, factory in (
+                    ("translation", translation_task, translation_loop),
+                    ("images", image_task, image_loop),
+                ):
+                    if task is None or task.done():
+                        if task is not None and not task.cancelled():
+                            error = task.exception()
+                            log.error("worker stopped name=%s error=%r; restarting", name, error)
+                        new_task = asyncio.create_task(factory())
+                        if name == "translation":
+                            translation_task = new_task
+                        else:
+                            image_task = new_task
+                        heartbeat[name] = now
+                        continue
+                    if (now - heartbeat[name]).total_seconds() > config.WORKER_WATCHDOG_SECONDS:
+                        log.error("worker heartbeat stale name=%s; restarting", name)
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+                        new_task = asyncio.create_task(factory())
+                        if name == "translation":
+                            translation_task = new_task
+                        else:
+                            image_task = new_task
+                        heartbeat[name] = now
+
+        watchdog_task = asyncio.create_task(worker_watchdog())
+        log.info(
+            "worker watchdog started check=%ss stale_after=%ss",
+            config.WORKER_WATCHDOG_CHECK_SECONDS,
+            config.WORKER_WATCHDOG_SECONDS,
+        )
+
         log.info("Market News is up, articles=%s", await database.count_articles())
         await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot, handle_signals=False)
@@ -1025,6 +1075,12 @@ async def run() -> None:
         try:
             if scheduler.running:
                 scheduler.shutdown(wait=False)
+            if watchdog_task is not None:
+                watchdog_task.cancel()
+                try:
+                    await watchdog_task
+                except asyncio.CancelledError:
+                    pass
             if translation_task is not None:
                 translation_task.cancel()
                 try:
