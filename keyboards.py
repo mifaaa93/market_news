@@ -34,6 +34,7 @@ WEEK = "week"
 PLANS = "plans"
 FEED = "feed"
 FIND = "find"
+SOURCE = "source"
 ADMIN = "admin"
 ADMIN_GRANT = "admin_grant"
 ADMIN_REVOKE = "admin_revoke"
@@ -131,18 +132,32 @@ def analytics_keyboard(lang: str) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def article_keyboard(lang: str, article_id: int, origin: str) -> InlineKeyboardMarkup:
+def article_keyboard(
+    lang: str, article_id: int, origin: str, *, source_id: int = 0, source_enabled: bool = False
+) -> InlineKeyboardMarkup:
     back_action, back_i, back_c = origin_back(origin)
     kb = InlineKeyboardBuilder()
     kb.row(_btn(t(lang, "btn_full"), FULL, article_id, origin))
     kb.row(_btn(t(lang, "btn_next"), NEXT, article_id, origin))
+    if source_id:
+        key = "btn_source_off" if source_enabled else "btn_source_on"
+        kb.row(_btn(t(lang, key), SOURCE, article_id, f"a{origin}"))
     kb.row(_btn(t(lang, "btn_back"), back_action, back_i, back_c), _btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()
 
 
-def full_keyboard(lang: str, article: Article, origin: str, *, allow_link: bool = False) -> InlineKeyboardMarkup:
+def full_keyboard(
+    lang: str,
+    article: Article,
+    origin: str,
+    *,
+    allow_link: bool = False,
+    source_enabled: bool = False,
+) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(_btn(t(lang, "btn_next"), NEXT, article.id, origin))
+    key = "btn_source_off" if source_enabled else "btn_source_on"
+    kb.row(_btn(t(lang, key), SOURCE, article.id, f"f{origin}"))
     kb.row(
         _btn(t(lang, "btn_collapse"), OPEN, article.id, origin),
         _btn(t(lang, "btn_menu"), HOME),
@@ -252,6 +267,7 @@ def feed_keyboard(
         _btn(t(lang, "btn_feed_off"), FEED, page, "off"),
         _btn(t(lang, "btn_feed_top"), FEED, page, "star"),
     )
+    kb.row(_btn(t(lang, "btn_feed_all"), FEED, page, "all"))
     kb.row(_btn(t(lang, "btn_subscription"), PLANS), _btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()
 
@@ -264,10 +280,15 @@ def week_keyboard(lang: str, articles: list[Article]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def feed_search_keyboard(lang: str, sources: list[Source]) -> InlineKeyboardMarkup:
+def feed_search_keyboard(
+    lang: str, sources: list[Source], enabled_ids: set[int] | None = None
+) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    enabled_ids = enabled_ids or set()
     for source in sources:
-        mark = "★ " if source.headline_rank else ""
+        mark = "✓ " if source.id in enabled_ids else "○ "
+        if source.headline_rank:
+            mark = f"{mark}★ "
         kb.row(_btn(f"{mark}{source.name}"[:64], FIND, source.id))
     kb.row(_btn(t(lang, "btn_my_feed"), FEED), _btn(t(lang, "btn_menu"), HOME))
     return kb.as_markup()

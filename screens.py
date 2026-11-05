@@ -95,7 +95,10 @@ async def article_screen(database: Database, user: User, article: Article, origi
     if not shown or not is_full_text(shown[0]):
         return t(user.lang, "no_article"), home_keyboard(user.lang)
     text = render_article(shown[0], user.lang, user.timezone)
-    return text, article_keyboard(user.lang, article.id, origin)
+    enabled = (await database.source_states(user.user_id, [article.source_id])).get(article.source_id, False)
+    return text, article_keyboard(
+        user.lang, article.id, origin, source_id=article.source_id, source_enabled=enabled
+    )
 
 
 async def full_screen(database: Database, user: User, article: Article, origin: str) -> Screen:
@@ -103,7 +106,8 @@ async def full_screen(database: Database, user: User, article: Article, origin: 
     if not shown or not is_full_text(shown[0]):
         return t(user.lang, "no_article"), home_keyboard(user.lang)
     text = render_full(shown[0], user.lang, user.timezone, expanded=True)
-    return text, full_keyboard(user.lang, article, origin)
+    enabled = (await database.source_states(user.user_id, [article.source_id])).get(article.source_id, False)
+    return text, full_keyboard(user.lang, article, origin, source_enabled=enabled)
 
 
 async def settings_screen(user: User) -> Screen:

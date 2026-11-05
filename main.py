@@ -70,6 +70,7 @@ from keyboards import (
     OPEN,
     SETTINGS,
     SOURCES,
+    SOURCE,
     STORY,
     home_keyboard,
     admin_keyboard,
@@ -413,10 +414,11 @@ async def on_feed_search(message: Message, db_user: User, state: FSMContext) -> 
             markup,
         )
         return
+    enabled_ids = set(await _db().enabled_source_ids(db_user.user_id))
     await show_message(
         message,
         t(db_user.lang, "source_many"),
-        feed_search_keyboard(db_user.lang, found),
+        feed_search_keyboard(db_user.lang, found, enabled_ids),
     )
 
 
@@ -571,6 +573,32 @@ async def on_action(
         await show_edit(message, text, markup, article.telegram_photo_id)
         return
 
+    if action == SOURCE:
+        article = await _db().get_article(callback_data.i)
+        if article is None:
+            await ack(query)
+            await show_edit(message, t(db_user.lang, "no_article"), home_keyboard(db_user.lang))
+            return
+        states = await _db().source_states(db_user.user_id, [article.source_id])
+        enabled = states.get(article.source_id, False)
+        if not enabled:
+            limit = await _db().source_limits(db_user.active_plan())
+            active = len(await _db().enabled_source_ids(db_user.user_id))
+            if active >= limit:
+                await ack(query)
+                text, markup = await plans_screen(_db(), db_user)
+                await show_message(message, text, markup, menu_cover_id("subscription"))
+                return
+        await _db().set_source_enabled(db_user.user_id, article.source_id, not enabled)
+        origin = (callback_data.c or "-")[1:]
+        await ack(query)
+        if callback_data.c.startswith("f"):
+            text, markup = await full_screen(_db(), db_user, article, origin)
+        else:
+            text, markup = await article_screen(_db(), db_user, article, origin)
+        await show_edit(message, text, markup, article.telegram_photo_id)
+        return
+
     if action == NEXT:
         await ack(query)
         origin = callback_data.c or "-"
@@ -650,21 +678,40 @@ async def on_action(
 
     if action == FIND:
         source = await _db().source(callback_data.i)
-        await state.clear()
         if source is None:
             await ack(query)
             await show_edit(message, t(db_user.lang, "source_not_found"), menu_only(db_user.lang))
             return
-        result = await _enable_catalog_source(db_user, source)
-        if result == "locked":
-            await ack(query)
-            text, markup = await plans_screen(_db(), db_user)
-            await show_edit(message, text, markup, menu_cover_id("subscription"))
-            return
-        key = "source_already" if result == "already" else "source_enabled"
-        await ack(query, fill(t(db_user.lang, key), name=source.name))
-        text, markup = await feed_screen(_db(), db_user, 1)
-        await show_edit(message, text, markup, menu_cover_id("feed"))
+        states = await _db().source_states(db_user.user_id, [source.id])
+        enabled = states.get(source.id, False)
+        if not enabled:
+            limit = await _db().source_limits(db_user.active_plan())
+            active = len(await _db().enabled_source_ids(db_user.user_id))
+            if active >= limit:
+                await ack(query)
+                text, markup = await plans_screen(_db(), db_user)
+                await show_message(message, text, markup, menu_cover_id("subscription"))
+                return
+        await _db().set_source_enabled(db_user.user_id, source.id, not enabled)
+        ids = [
+            parsed.i
+            for row in (message.reply_markup.inline_keyboard if message.reply_markup else [])
+            for button in row
+            if button.callback_data
+            for parsed in [Act.unpack(button.callback_data)]
+            if parsed.a == FIND
+        ]
+        found = [item for item in [await _db().source(int(source_id)) for source_id in ids] if item]
+        if not found:
+            found = [source]
+        await ack(query)
+        await show_edit(
+            message,
+            t(db_user.lang, "source_many"),
+            feed_search_keyboard(
+                db_user.lang, found, set(await _db().enabled_source_ids(db_user.user_id))
+            ),
+        )
         return
 
     if action == FEED:
@@ -678,10 +725,14 @@ async def on_action(
                 menu_only(db_user.lang),
             )
             return
-        if callback_data.c in {"off", "star"}:
+        if callback_data.c in {"off", "star", "all"}:
             page = callback_data.i or 1
             if callback_data.c == "off":
                 await _db().disable_all_sources(db_user.user_id)
+            elif callback_data.c == "all":
+                await _db().enable_all_sources(
+                    db_user.user_id, await _db().source_limits(db_user.active_plan())
+                )
             else:
                 limit = await _db().source_limits(db_user.active_plan())
                 await _db().enable_headline_sources(db_user.user_id, limit)

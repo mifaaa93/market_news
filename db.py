@@ -734,6 +734,57 @@ class Database:
             await self.set_source_enabled(user_id, source_id, True)
             enabled.append(source_id)
 
+    async def enable_all_sources(self, user_id: int, limit: int) -> int:
+        """Fill remaining plan slots from the catalogue without replacing existing picks."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.fetchrow("SELECT user_id FROM users WHERE user_id=$1 FOR UPDATE", user_id)
+                active = int(await conn.fetchval(
+                    "SELECT COUNT(*) FROM user_sources WHERE user_id=$1 AND enabled", user_id
+                ) or 0)
+                if active >= limit:
+                    return 0
+                rows = await conn.fetch(
+                    """
+                    SELECT s.id
+                    FROM sources s
+                    LEFT JOIN user_sources us
+                        ON us.user_id=$1 AND us.source_id=s.id
+                    LEFT JOIN articles a ON a.source_id=s.id
+                    WHERE COALESCE(us.enabled, FALSE)=FALSE
+                    GROUP BY s.id
+                    ORDER BY s.pin_order NULLS LAST, COUNT(a.id) DESC, s.name
+                    LIMIT $2
+                    """,
+                    user_id,
+                    limit - active,
+                )
+                ids = [int(row["id"]) for row in rows]
+                if not ids:
+                    return 0
+                await conn.execute(
+                    """
+                    INSERT INTO user_sources(user_id, source_id, enabled)
+                    SELECT $1, unnest($2::int[]), TRUE
+                    ON CONFLICT (user_id, source_id) DO UPDATE SET enabled=TRUE
+                    """,
+                    user_id,
+                    ids,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO article_pushes(user_id, article_id, sent_at)
+                    SELECT $1, a.id, $3
+                    FROM articles a
+                    WHERE a.source_id = ANY($2::int[])
+                    ON CONFLICT DO NOTHING
+                    """,
+                    user_id,
+                    ids,
+                    utc_now(),
+                )
+                return len(ids)
+
     async def set_source_enabled(self, user_id: int, source_id: int, enabled: bool) -> None:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
