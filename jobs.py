@@ -17,6 +17,7 @@ from gnews import (
     UA,
     fetch_lang,
     is_quality_search_article,
+    is_non_priority_indian_article,
     mark_origin,
     parse_articles,
     requests_per_cycle,
@@ -178,6 +179,17 @@ async def poll_gnews(database: Database, kind: str) -> int:
                 if payload is None:
                     continue
                 parsed = parse_articles(payload, lang)
+                before_country = len(parsed)
+                parsed = [
+                    item for item in parsed
+                    if not is_non_priority_indian_article(item)
+                ]
+                if before_country != len(parsed):
+                    log.info(
+                        "country filter lang=%s dropped=%s",
+                        lang,
+                        before_country - len(parsed),
+                    )
                 if kind == "search":
                     before = len(parsed)
                     parsed = [item for item in parsed if is_quality_search_article(item)]

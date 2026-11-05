@@ -151,6 +151,12 @@ def is_quality_search_article(item: IncomingArticle) -> bool:
     return title_hits >= 1 and score >= 3
 
 
+def is_non_priority_indian_article(item: IncomingArticle) -> bool:
+    """Reject Indian-source news unless the source is in the priority list."""
+    country = str(item.source_extra.get("country") or "").strip().casefold()
+    return country == "in" and config.source_pin_order(item.source_name, item.source_url) is None
+
+
 def search_due(last_search_at: str | None, now: datetime | None = None) -> bool:
     moment = now or datetime.now(timezone.utc)
     if not last_search_at:

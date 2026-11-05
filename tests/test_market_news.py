@@ -475,6 +475,91 @@ class GNewsTests(unittest.TestCase):
 
 
 class SearchPollingTests(unittest.IsolatedAsyncioTestCase):
+    def test_non_priority_indian_source_is_rejected(self) -> None:
+        from gnews import is_non_priority_indian_article, parse_articles
+
+        payload = {
+            "articles": [
+                {
+                    "title": "Indian stocks rise after market update",
+                    "description": "Investors reacted to the news.",
+                    "content": "Market prices moved higher.",
+                    "url": "https://example.in/story",
+                    "publishedAt": "2026-11-05T12:00:00Z",
+                    "source": {
+                        "name": "Example India",
+                        "url": "https://example.in",
+                        "country": "in",
+                    },
+                },
+                {
+                    "title": "Reuters: Indian stocks rise after market update",
+                    "description": "Investors reacted to the news.",
+                    "content": "Market prices moved higher.",
+                    "url": "https://reuters.com/story",
+                    "publishedAt": "2026-11-05T12:00:00Z",
+                    "source": {
+                        "name": "Reuters",
+                        "url": "https://reuters.com",
+                        "country": "in",
+                    },
+                },
+                {
+                    "title": "Indian stocks rise after market update without country metadata",
+                    "description": "Investors reacted to the news.",
+                    "content": "Market prices moved higher.",
+                    "url": "https://example.in/unknown",
+                    "publishedAt": "2026-11-05T12:00:00Z",
+                    "source": {
+                        "name": "Example India",
+                        "url": "https://example.in",
+                    },
+                },
+            ]
+        }
+        items = parse_articles(payload, "en")
+        self.assertTrue(is_non_priority_indian_article(items[0]))
+        self.assertFalse(is_non_priority_indian_article(items[1]))
+        self.assertFalse(is_non_priority_indian_article(items[2]))
+
+    async def test_top_drops_non_priority_indian_source_before_replacing(self) -> None:
+        from jobs import poll_gnews
+
+        data = {
+            "totalArticles": 2,
+            "articles": [
+                {
+                    "title": "Indian stocks rally after market update",
+                    "description": "Investors reacted to the news.",
+                    "content": "Market prices moved higher.",
+                    "url": "https://example.in/stocks",
+                    "publishedAt": "2026-11-05T12:00:00Z",
+                    "source": {"name": "Example India", "url": "https://example.in", "country": "in"},
+                },
+                {
+                    "title": "Reuters markets update after economic data",
+                    "description": "Investors reacted to the news.",
+                    "content": "Market prices moved higher.",
+                    "url": "https://reuters.com/markets/update",
+                    "publishedAt": "2026-11-05T12:00:00Z",
+                    "source": {"name": "Reuters", "url": "https://reuters.com", "country": "in"},
+                },
+            ],
+        }
+        database = SimpleNamespace(
+            quota_remaining=AsyncMock(return_value=1000),
+            quota_consume=AsyncMock(return_value=True),
+            meta_get=AsyncMock(return_value=None),
+            meta_set=AsyncMock(),
+            replace_top=AsyncMock(return_value=1),
+            delete_old=AsyncMock(return_value=0),
+            seed_missing_feeds=AsyncMock(),
+        )
+        with patch("jobs.fetch_lang", new_callable=AsyncMock, return_value=data):
+            await poll_gnews(database, "top")
+        items = database.replace_top.call_args.args[1]
+        self.assertEqual([item.source_name for item in items], ["Reuters"])
+
     async def test_search_rotates_queries_and_filters_before_ingest(self) -> None:
         from jobs import poll_gnews
 
@@ -496,6 +581,18 @@ class SearchPollingTests(unittest.IsolatedAsyncioTestCase):
                     "url": "https://example.com/stock-up",
                     "publishedAt": "2026-11-05T12:01:00Z",
                     "source": {"name": "Example Local", "url": "https://example.com"},
+                },
+                {
+                    "title": "Indian stocks rally after market update",
+                    "description": "Investors reacted to the news.",
+                    "content": "Market prices moved higher.",
+                    "url": "https://example.in/india-stocks",
+                    "publishedAt": "2026-11-05T12:02:00Z",
+                    "source": {
+                        "name": "Example India",
+                        "url": "https://example.in",
+                        "country": "in",
+                    },
                 },
             ],
         }
