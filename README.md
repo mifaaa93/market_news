@@ -52,3 +52,9 @@ python main.py
 Дайджест, главная и «новость дня» показывают текущий снимок топа. «Последние», категории и пуши — выбранные источники из поиска.
 
 Пользователь видит и получает пуши только по выбранным источникам своего языка. Новому пользователю включаются топ-источники по числу новостей в пределах лимита тарифа. При смене языка включаются источники с тем же названием, если они есть.
+# Menu artwork
+
+Premium menu covers are stored in `assets/menu/`. They use one shared
+text-free visual style, so the same images work for `ru`, `en`, and `ar`
+without localization variants or typography artifacts.
+

@@ -30,6 +30,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import config
 from db import Database
+from menu_covers import menu_cover_id, preload_menu_covers
 from jobs import (
     image_worker,
     refresh_catalog,
@@ -218,7 +219,13 @@ async def _content(query: CallbackQuery, user: User, builder) -> None:
     await ack(query)
     user = await _db().add_interaction(user.user_id)
     text, markup = await builder(_db(), user)
-    await show_edit(query.message, text, markup)
+    cover = {
+        digest_screen: "digest",
+        analytics_screen: "analytics",
+        latest_screen: "latest",
+        categories_screen: "categories",
+    }.get(builder)
+    await show_edit(query.message, text, markup, menu_cover_id(cover) if cover else None)
 
 
 @router.message(CommandStart())
@@ -226,33 +233,33 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
     await state.clear()
     log.info("start %s", db_user.user_id)
     text, markup = await home_screen(_db(), db_user)
-    await show_message(message, text, markup)
+    await show_message(message, text, markup, menu_cover_id("how_it_works"))
 
 
 @router.message(Command("digest", "today"))
 async def cmd_digest(message: Message, db_user: User) -> None:
     db_user = await _db().add_interaction(db_user.user_id)
     text, markup = await digest_screen(_db(), db_user)
-    await show_message(message, text, markup)
+    await show_message(message, text, markup, menu_cover_id("digest"))
 
 
 @router.message(Command("analytics"))
 async def cmd_analytics(message: Message, db_user: User) -> None:
     db_user = await _db().add_interaction(db_user.user_id)
     text, markup = await analytics_screen(_db(), db_user)
-    await show_message(message, text, markup)
+    await show_message(message, text, markup, menu_cover_id("analytics"))
 
 
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, db_user: User) -> None:
     text, markup = await settings_screen(db_user)
-    await show_message(message, text, markup)
+    await show_message(message, text, markup, menu_cover_id("settings"))
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message, db_user: User) -> None:
     text, markup = await help_screen(_db(), db_user)
-    await show_message(message, text, markup)
+    await show_message(message, text, markup, menu_cover_id("help"))
 
 
 @router.message(Command("admin"))
@@ -501,13 +508,13 @@ async def on_action(
     if action == HOME:
         await ack(query)
         text, markup = await home_screen(_db(), db_user)
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, menu_cover_id("how_it_works"))
         return
 
     if action == HOW_IT_WORKS:
         await ack(query)
         text, markup = await how_it_works_screen(_db(), db_user)
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, menu_cover_id("how_it_works"))
         return
 
     if action == DIGEST:
@@ -531,7 +538,7 @@ async def on_action(
         if category not in CATEGORIES:
             await ack(query)
             text, markup = await categories_screen(_db(), db_user)
-            await show_edit(message, text, markup)
+            await show_edit(message, text, markup, menu_cover_id("categories"))
             return
 
         async def _cat(db, user, category=category):
@@ -586,13 +593,13 @@ async def on_action(
     if action == SETTINGS:
         await ack(query)
         text, markup = await settings_screen(db_user)
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, menu_cover_id("settings"))
         return
 
     if action == HELP:
         await ack(query)
         text, markup = await help_screen(_db(), db_user)
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, menu_cover_id("help"))
         return
 
     if action == SOURCES:
@@ -638,7 +645,7 @@ async def on_action(
     if action == PLANS:
         await ack(query)
         text, markup = await plans_screen(_db(), db_user)
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, menu_cover_id("subscription"))
         return
 
     if action == FIND:
@@ -652,12 +659,12 @@ async def on_action(
         if result == "locked":
             await ack(query)
             text, markup = await plans_screen(_db(), db_user)
-            await show_edit(message, text, markup)
+            await show_edit(message, text, markup, menu_cover_id("subscription"))
             return
         key = "source_already" if result == "already" else "source_enabled"
         await ack(query, fill(t(db_user.lang, key), name=source.name))
         text, markup = await feed_screen(_db(), db_user, 1)
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, menu_cover_id("feed"))
         return
 
     if action == FEED:
@@ -709,7 +716,7 @@ async def on_action(
                 page = int(callback_data.c)
             await ack(query)
         text, markup = await feed_screen(_db(), db_user, page)
-        await show_edit(message, text, markup)
+        await show_edit(message, text, markup, menu_cover_id("feed"))
         return
 
     if action == PAY:
@@ -877,6 +884,11 @@ async def run() -> None:
 
     try:
         await _configure_bot(bot)
+        try:
+            cached = await preload_menu_covers(bot)
+            log.info("menu covers cached=%s", cached)
+        except Exception:
+            log.exception("menu cover preload failed; continuing without covers")
         startup = asyncio.create_task(startup_sync())
 
         async def search_job() -> None:
