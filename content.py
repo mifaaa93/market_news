@@ -521,23 +521,18 @@ def _story_block(article: Article, lang: str, limit: int, *, index: int | None) 
 
 
 def _disclaimer(lang: str) -> str:
-    return f"<footer>{_e(t(lang, 'disclaimer'))}</footer>"
+    return ""
 
 
 def render_home(items: list[Article], lang: str, tz_name: str, updated_iso: str | None) -> str:
     parts = ["<h1>Market News</h1>", f"<p>{_e(t(lang, 'tagline'))}</p>"]
     if not items:
         parts.append(f"<p>{_e(t(lang, 'empty'))}</p>")
-        parts.append(_disclaimer(lang))
         return fit("".join(parts))
     shown = items[:3]
     parts.append(f"<h2>{_e(t(lang, 'today_head'))}</h2>")
     for index, article in enumerate(shown, start=1):
         parts.append(_story_block(article, lang, 280, index=index))
-    stamp = format_local(updated_iso, tz_name)
-    if stamp:
-        parts.append(f"<footer>{_e(fill(t(lang, 'updated'), stamp=stamp, tz=tz_label(lang, tz_name)))}</footer>")
-    parts.append(_disclaimer(lang))
     return fit("".join(parts))
 
 
@@ -560,12 +555,8 @@ def render_digest(
         parts.append(_story_block(article, lang, 180, index=index))
     if shown:
         parts.append(f"<footer>{_e(fill(t(lang, 'sources_line'), names=_names(shown)))}</footer>")
-    stamp = format_local(updated_iso, tz_name)
-    if stamp:
-        parts.append(f"<footer>{_e(fill(t(lang, 'updated'), stamp=stamp, tz=tz_label(lang, tz_name)))}</footer>")
     if mailed:
         parts.append(f"<footer>{_e(t(lang, 'mail_footer'))}</footer>")
-    parts.append(_disclaimer(lang))
     return fit("".join(parts))
 
 
@@ -662,10 +653,6 @@ def render_article(article: Article, lang: str, tz_name: str) -> str:
         f"<p>{_e(clip(summary_text(article, lang), 700))}</p>",
         f"<footer>{_e(t(lang, 'source'))}: {_e(article.source_name)}</footer>",
     ]
-    when = format_local(article.published_at, tz_name)
-    if when:
-        parts.append(f"<footer>{_e(when)} · {_e(tz_label(lang, tz_name))}</footer>")
-    parts.append(_disclaimer(lang))
     return fit("".join(parts))
 
 
@@ -680,9 +667,7 @@ def render_full(article: Article, lang: str, tz_name: str, *, expanded: bool) ->
     if not expanded:
         parts.append(f"<p>{_e(t(lang, 'full_missing'))}</p>")
     parts.append(_paragraphs(clip_block(text, 3400 if expanded else 900)))
-    when = format_local(article.published_at, tz_name)
-    meta = article.source_name if not when else f"{article.source_name} · {when}"
-    parts.append(f"<footer>{_e(t(lang, 'source'))}: {_e(meta)}</footer>")
+    parts.append(f"<footer>{_e(t(lang, 'source'))}: {_e(article.source_name)}</footer>")
     return fit("".join(parts))
 
 
@@ -713,8 +698,6 @@ def render_settings(user: User) -> str:
         )
     else:
         lines.append(html.escape(t(lang, "plus_off")))
-    lines.append("")
-    lines.append(f"<i>{html.escape(t(lang, 'disclaimer'))}</i>")
     return fit("\n".join(lines))
 
 
@@ -734,7 +717,6 @@ def render_sources(lang: str, blocks: list[tuple[str, str]], *, allow_link: bool
         lines.append(f"<b>{html.escape(name)}</b>")
         lines.append(html.escape(about))
         lines.append("")
-    lines.append(f"<i>{html.escape(t(lang, 'disclaimer'))}</i>")
     return fit("\n".join(lines).strip())
 
 
@@ -771,8 +753,6 @@ def render_plus(user: User) -> str:
             )
         )
     )
-    lines.append("")
-    lines.append(f"<i>{html.escape(t(lang, 'disclaimer'))}</i>")
     return fit("\n".join(lines))
 
 
@@ -788,7 +768,6 @@ def render_plans(user: User, catalog_count: int = 0) -> str:
                 status=t(user.lang, f"btn_plan_{user.plan}" if user.plan in {"base", "plus", "pro"} else "btn_plan_base"),
             )
         ),
-        f"<i>{html.escape(t(user.lang, 'disclaimer'))}</i>",
     ]
     return fit("\n".join(lines))
 
@@ -814,6 +793,5 @@ def render_feed(
         ),
         "",
         html.escape(fill(t(user.lang, "feed_page"), page=page, pages=pages)),
-        f"<i>{html.escape(t(user.lang, 'disclaimer'))}</i>",
     ]
     return fit("\n".join(lines))

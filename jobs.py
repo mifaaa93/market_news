@@ -11,10 +11,10 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
 import config
-from content import digest_due, render_digest, safe_zone, source_hash
+from content import digest_due, render_article, safe_zone, source_hash
 from db import Database, utc_now, utc_now_iso
 from gnews import UA, fetch_lang, mark_origin, parse_articles, requests_per_cycle
-from keyboards import digest_keyboard, push_keyboard
+from keyboards import article_keyboard, digest_keyboard
 from images import cache_pending_photos
 from translate import translate_pending
 from ui import deliver
@@ -82,19 +82,28 @@ async def refresh_search(database: Database, bot: Bot | None = None) -> int:
 
 async def translation_worker(database: Database, bot: Bot | None = None) -> int:
     sent = await push_new_articles(database, bot)
-    photos = await cache_pending_photos(database, bot, limit=config.IMAGE_BATCH_LIMIT)
     translated = 0
     if config.CVC_API_KEY:
         translated = await translate_pending(database, limit=config.TRANSLATION_BATCH_LIMIT)
     sent += await push_new_articles(database, bot)
-    if translated or sent or photos:
+    if translated or sent:
         log.info(
-            "translation worker: translated=%s pushed=%s photos=%s",
+            "translation worker: translated=%s pushed=%s",
             translated,
             sent,
-            photos,
         )
     return translated
+
+
+async def image_worker(database: Database, bot: Bot | None = None) -> int:
+    cached = await cache_pending_photos(
+        database,
+        bot,
+        limit=config.IMAGE_BATCH_LIMIT,
+    )
+    if cached:
+        log.info("image worker: cached=%s", cached)
+    return cached
 
 
 async def poll_gnews(database: Database, kind: str) -> int:
@@ -205,13 +214,19 @@ async def push_new_articles(database: Database, bot: Bot | None = None) -> int:
             if not shown:
                 continue
             item = shown[0]
-            text = (
-                f"<b>{item.title}</b>\n\n"
-                f"{item.source_name}\n"
-                f"{item.summary}"
-            )
+            # Пуш должен выглядеть так же, как экран новости после нажатия
+            # «Читать»: с тем же заголовком, саммари и источником. Если
+            # image_worker уже закэшировал картинку, ui.py встроит её в
+            # Rich Message.
+            text = render_article(item, user.lang, user.timezone)
             try:
-                await deliver(bot, user.user_id, text, push_keyboard(user.lang, article.id))
+                await deliver(
+                    bot,
+                    user.user_id,
+                    text,
+                    article_keyboard(user.lang, article.id, "p"),
+                    item.telegram_photo_id,
+                )
                 await database.mark_push_sent(user.user_id, article.id)
                 per_user[user.user_id] = per_user.get(user.user_id, 0) + 1
                 sent += 1

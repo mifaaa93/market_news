@@ -21,6 +21,7 @@ from content import (
     render_article,
     render_digest,
     render_home,
+    render_full,
     render_settings,
     resolve_category,
     title_norm,
@@ -216,9 +217,16 @@ class ContentTests(unittest.TestCase):
     def test_screens_have_no_outbound_links(self) -> None:
         article = _article()
         user = _user(interactions=10, full_reads=5)
-        _no_link(render_home([article], "ru", "Europe/Moscow", "2026-10-30T12:00:00Z"))
-        _no_link(render_digest([article], "ru", "Europe/Moscow", "2026-10-30T12:00:00Z"))
-        _no_link(render_article(article, "ru", "Europe/Moscow"))
+        for rendered in (
+            render_home([article], "ru", "Europe/Moscow", "2026-10-30T12:00:00Z"),
+            render_digest([article], "ru", "Europe/Moscow", "2026-10-30T12:00:00Z"),
+            render_article(article, "ru", "Europe/Moscow"),
+            render_full(article, "ru", "Europe/Moscow", expanded=True),
+        ):
+            _no_link(rendered)
+            self.assertNotIn("30.10.2026", rendered)
+            self.assertNotIn("12:00", rendered)
+            self.assertNotIn("инвестиционной рекомендацией", rendered)
         _no_link(render_settings(user))
         self.assertTrue(is_full_text(article))
         self.assertEqual(_urls(home_keyboard("ru")), [])
@@ -235,6 +243,11 @@ class ContentTests(unittest.TestCase):
         self.assertNotIn("add_source", actions)
         home = render_home([article], "ru", "Europe/Moscow", "2026-10-30T12:00:00Z")
         self.assertNotIn("<img", home.lower())
+
+    def test_article_render_includes_cached_photo(self) -> None:
+        article = _article(telegram_photo_id="AgACAgQAAx")
+        rendered = render_article(article, "ru", "Europe/Moscow")
+        self.assertIn('tg://photo?id=cover', rendered)
 
     def test_feed_keyboard_paginates(self) -> None:
         rows = [
@@ -258,6 +271,23 @@ class ContentTests(unittest.TestCase):
         html = "<p>Hi <img src='x'> there</p>"
         self.assertNotIn("<img", without_images(html))
         self.assertIn("<b>", as_rich_html("plain <b>bold</b>"))
+
+    def test_rich_html_escapes_unknown_markup(self) -> None:
+        rendered = as_rich_html("<p>Price < 5 & <script>alert(1)</script> <b>safe</b></p>")
+        self.assertIn("Price &lt; 5 &amp;", rendered)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", rendered)
+        self.assertIn("<b>safe</b>", rendered)
+
+    def test_news_fields_escape_markup(self) -> None:
+        article = _article(
+            title="Price < 5 & > 3",
+            summary="A <b>quoted</b> & raw update with enough text to remain the summary.",
+            source_name="News <Wire>",
+        )
+        rendered = render_article(article, "ru", "Europe/Moscow")
+        self.assertIn("Price &lt; 5 &amp; &gt; 3", rendered)
+        self.assertIn("A &lt;b&gt;quoted&lt;/b&gt; &amp; raw", rendered)
+        self.assertIn("News &lt;Wire&gt;", rendered)
 
 
 class GNewsTests(unittest.TestCase):

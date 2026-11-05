@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+from html.parser import HTMLParser
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -25,12 +26,100 @@ _FIGURE = re.compile(r"<figure\b.*?</figure>", re.IGNORECASE | re.DOTALL)
 _COLLAGE = re.compile(r"<tg-collage\b.*?</tg-collage>", re.IGNORECASE | re.DOTALL)
 _IMG = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _TAGS = re.compile(r"<[^>]+>")
+_RICH_TAGS = {
+    "b",
+    "br",
+    "cite",
+    "em",
+    "figcaption",
+    "figure",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "i",
+    "img",
+    "li",
+    "p",
+    "strong",
+    "tg-collage",
+    "ul",
+}
+_VOID_RICH_TAGS = {"br", "img"}
+_SAFE_PHOTO_SRC = "tg://photo?id=cover"
+
+
+class _RichHTMLSanitizer(HTMLParser):
+    """Keep only the small Rich Message HTML subset used by the bot.
+
+    Renderers escape dynamic article data themselves. This second boundary is
+    intentional: it protects the Telegram payload even if a future screen
+    passes raw text containing markup-looking characters.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(html.escape(data, quote=False))
+
+    def handle_entityref(self, name: str) -> None:
+        self.parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        self.parts.append(f"&#{name};")
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag not in _RICH_TAGS:
+            self.parts.append(html.escape(self.get_starttag_text() or "", quote=False))
+            return
+        if tag == "img":
+            src = next(
+                (
+                    value
+                    for name, value in attrs
+                    if name.lower() == "src" and value == _SAFE_PHOTO_SRC
+                ),
+                None,
+            )
+            if src:
+                self.parts.append(f'<img src="{_SAFE_PHOTO_SRC}"/>')
+            return
+        self.parts.append(f"<{tag}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in _RICH_TAGS and tag not in _VOID_RICH_TAGS:
+            self.parts.append(f"</{tag}>")
+        elif tag not in _RICH_TAGS:
+            self.parts.append(html.escape(f"</{tag}>", quote=False))
+
+    def handle_comment(self, data: str) -> None:
+        self.parts.append(html.escape(f"<!--{data}-->", quote=False))
+
+    def handle_decl(self, decl: str) -> None:
+        self.parts.append(html.escape(f"<!{decl}>", quote=False))
+
+    def handle_pi(self, data: str) -> None:
+        self.parts.append(html.escape(f"<?{data}>", quote=False))
+
+
+def sanitize_rich_html(text: str) -> str:
+    parser = _RichHTMLSanitizer()
+    parser.feed(text or "")
+    parser.close()
+    return "".join(parser.parts)
 
 
 def as_rich_html(text: str) -> str:
     payload = fit(text).strip()
     if _BLOCK.search(payload):
-        return payload
+        return sanitize_rich_html(payload)
     chunks = [chunk.strip() for chunk in re.split(r"\n\s*\n", payload) if chunk.strip()]
     if not chunks:
         return "<p></p>"
@@ -38,7 +127,7 @@ def as_rich_html(text: str) -> str:
     for chunk in chunks:
         inner = "<br/>".join(line.strip() for line in chunk.splitlines() if line.strip())
         parts.append(f"<p>{inner}</p>")
-    return "".join(parts)
+    return sanitize_rich_html("".join(parts))
 
 
 def without_images(text: str) -> str:

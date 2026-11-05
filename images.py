@@ -93,28 +93,45 @@ async def upload_photo(bot: Bot, jpeg: bytes) -> str | None:
     return file_id
 
 
+async def _cache_one_photo(database: Database, bot: Bot, article) -> bool:
+    jpeg = await download_image(article.image_url)
+    if jpeg is None:
+        await database.save_photo_id(article.id, "")
+        return False
+    try:
+        file_id = await upload_photo(bot, jpeg)
+    except Exception:
+        log.exception("telegram photo upload failed article=%s", article.id)
+        await database.save_photo_id(article.id, "")
+        return False
+    if not file_id:
+        await database.save_photo_id(article.id, "")
+        return False
+    await database.save_photo_id(article.id, file_id)
+    return True
+
+
 async def cache_pending_photos(database: Database, bot: Bot | None, *, limit: int = 4) -> int:
     if bot is None:
         return 0
     async with _LOCK:
         items = await database.articles_missing_photo(limit)
-        done = 0
-        for article in items:
-            jpeg = await download_image(article.image_url)
-            if jpeg is None:
-                await database.save_photo_id(article.id, "")
-                continue
-            try:
-                file_id = await upload_photo(bot, jpeg)
-            except Exception:
-                log.exception("telegram photo upload failed article=%s", article.id)
-                await database.save_photo_id(article.id, "")
-                continue
-            if not file_id:
-                await database.save_photo_id(article.id, "")
-                continue
-            await database.save_photo_id(article.id, file_id)
-            done += 1
+        if not items:
+            return 0
+        # Downloading and uploading a batch concurrently keeps the photo cache
+        # ahead of translation without delaying the notification worker.
+        results = await asyncio.gather(
+            *(_cache_one_photo(database, bot, article) for article in items),
+            return_exceptions=True,
+        )
+        done = sum(result is True for result in results)
+        for result, article in zip(results, items):
+            if isinstance(result, Exception):
+                log.exception(
+                    "photo cache failed article=%s",
+                    article.id,
+                    exc_info=(type(result), result, result.__traceback__),
+                )
         if done:
             log.info("cached %s telegram photos", done)
         return done

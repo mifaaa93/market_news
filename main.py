@@ -30,7 +30,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import config
 from db import Database
-from jobs import refresh_catalog, refresh_search, refresh_top, send_digests, translation_worker
+from jobs import (
+    image_worker,
+    refresh_catalog,
+    refresh_search,
+    refresh_top,
+    send_digests,
+    translation_worker,
+)
 from keyboards import (
     HOUR,
     LANG,
@@ -854,6 +861,7 @@ async def run() -> None:
     dp.include_router(router)
     startup: asyncio.Task | None = None
     translation_task: asyncio.Task | None = None
+    image_task: asyncio.Task | None = None
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     loop = asyncio.get_running_loop()
     run_task = asyncio.current_task()
@@ -934,6 +942,18 @@ async def run() -> None:
                     log.exception("translation worker failed")
                 await asyncio.sleep(config.TRANSLATION_WORKER_SECONDS)
 
+        async def image_loop() -> None:
+            while True:
+                try:
+                    await image_worker(database, bot)
+                except asyncio.CancelledError:
+                    log.info("image worker cancelled during shutdown")
+                    raise
+                except Exception:
+                    log.exception("image worker failed")
+                await asyncio.sleep(config.IMAGE_WORKER_SECONDS)
+
+        image_task = asyncio.create_task(image_loop())
         translation_task = asyncio.create_task(translation_loop())
         log.info("Market News is up, articles=%s", await database.count_articles())
         await bot.delete_webhook(drop_pending_updates=False)
@@ -946,6 +966,12 @@ async def run() -> None:
                 translation_task.cancel()
                 try:
                     await translation_task
+                except asyncio.CancelledError:
+                    pass
+            if image_task is not None:
+                image_task.cancel()
+                try:
+                    await image_task
                 except asyncio.CancelledError:
                     pass
             if startup is not None:

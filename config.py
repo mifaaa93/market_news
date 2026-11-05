@@ -111,6 +111,7 @@ TRANSLATION_LANGS = tuple(
 )
 IMAGE_CACHE_CHAT_ID = _int("IMAGE_CACHE_CHAT_ID", ADMIN_USER_ID, 1)
 IMAGE_BATCH_LIMIT = _int("IMAGE_BATCH_LIMIT", 4, 1)
+IMAGE_WORKER_SECONDS = _int("IMAGE_WORKER_SECONDS", 2, 1)
 
 CVC_API_KEY = os.getenv("CVC_API_KEY", "").strip()
 CVC_BASE_URL = os.getenv("CVC_BASE_URL", "https://ru.cheapvibecode.ru/v1").strip().rstrip("/")

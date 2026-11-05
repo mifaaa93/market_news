@@ -21,7 +21,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "tagline": "Ежедневная аналитика рынков",
         "today_head": "Сегодняшние главные новости:",
         "updated": "Обновлено: {stamp} ({tz})",
-        "disclaimer": "Не является инвестиционной рекомендацией.",
+        "disclaimer": "",
         "source": "Источник",
         "topic": "Тема",
         "loading": "Собираю свежие заголовки по рынкам. Через несколько секунд здесь будут новости дня.",
@@ -62,12 +62,27 @@ STRINGS: dict[str, dict[str, str]] = {
         "settings_push_off": "Рассылка выключена",
         "plus_active": "Plus активен до {until}",
         "plus_off": "Подписка не подключена. Дайджест, аналитика и полный текст остаются бесплатными.",
-        "plus_pitch": "Лента рынка в одном окне. Базовый тариф — 0 Stars: до 5 источников и дневной дайджест. Plus — {plus_stars} Stars на 30 дней: до {plus_limit} источников, сообщение по новой статье с минимальной задержкой. Pro — {pro_stars} Stars: до {pro_limit} источников, уведомления мгновенно.",
+        "plus_pitch": """Одна лента рынка вместо десятков вкладок.
+
+Базовый — 0 Stars. До 5 источников, дневной дайджест, аналитика и полный текст новостей внутри бота — спокойный способ быть в курсе главного.
+
+Plus — {plus_stars} Stars на 30 дней. До {plus_limit} источников и отдельное сообщение по каждой новой статье из выбранной ленты, как только материал сохранён ботом. Вы не ждёте вечернего дайджеста и не проверяете сайты вручную.
+
+Pro — {pro_stars} Stars на 30 дней. До {pro_limit} источников и тот же формат уведомлений для постоянного мониторинга. Максимальный охват помогает следить сразу за несколькими рынками и реже пропускать важные публикации.""",
         "plus_thanks": "{plan} подключён до {until}. Дневной дайджест остаётся доступен.",
         "plus_invoice_title": "Market News {plan}",
         "plus_invoice_desc": "30 дней: больше источников и уведомления по новым статьям.",
         "plans_title": "Тарифы Market News",
-        "plans_text": "Для вашего языка сейчас {catalog} источников.\n\nБазовый — 0 Stars: до 5 включённых источников, дневной дайджест.\n\nPlus — 200 Stars / 30 дней: до 100 источников, сообщение по новой статье с минимальной задержкой.\n\nPro — 500 Stars / 30 дней: до 500 источников, уведомления мгновенно.",
+        "plans_text": """Для вашего языка сейчас {catalog} источников.
+
+Базовый — 0 Stars
+Для ежедневного обзора главного: до 5 включённых источников, дневной дайджест, аналитика и полный текст внутри бота.
+
+Plus — 200 Stars / 30 дней
+Для тех, кто следит за рынком в течение дня: до 100 источников и отдельное сообщение в чат по каждой новой статье из выбранной ленты, как только материал сохранён ботом. Не нужно ждать вечернего дайджеста или вручную открывать десятки сайтов.
+
+Pro — 500 Stars / 30 дней
+Для постоянного мониторинга и широкого охвата: до 500 источников и отдельные сообщения по новым материалам. Можно собрать ленты разных рынков в одном месте и снизить риск пропустить публикацию у менее заметного источника.""",
         "feed_title": "Моя лента",
         "feed_intro": "Сначала издания из текущего топа (★), затем остальные по числу новостей. Включено {enabled} из {limit}.",
         "feed_page": "Страница {page} из {pages}",
@@ -150,25 +165,28 @@ STRINGS: dict[str, dict[str, str]] = {
 Market News собирает деловые новости с {sources} и переводит их на язык интерфейса.
 
 <b>Что доступно бесплатно</b>
-• Главные новости и дневной дайджест.
+• До 5 выбранных источников и дневной дайджест главного.
 • Аналитика и разбивка по темам: акции, нефть, макро и крипта.
-• Текст материалов внутри бота.
+• Заголовок, саммари и полный текст материалов внутри бота.
 • Выбор языка интерфейса и времени ежедневной рассылки.
+Это подходит, если вам достаточно один раз в день быстро понять, что произошло на рынке.
 
 <b>Подписка Plus</b>
-200 Stars на 30 дней.
-• До 100 источников в ленте.
-• Уведомление по новой статье с минимальной задержкой.
+200 Stars на 30 дней. Для тех, кому важно узнавать о новых публикациях в течение дня.
+• До 100 источников в одной персональной ленте.
+• Отдельное сообщение по каждой новой статье выбранного источника, как только материал сохранён ботом.
+• Не нужно ждать дайджест или вручную проверять десятки сайтов.
 
 <b>Подписка Pro</b>
-500 Stars на 30 дней.
-• До 500 источников.
-• Уведомления по новым статьям мгновенно.
+500 Stars на 30 дней. Для постоянного мониторинга нескольких рынков и максимального охвата.
+• До 500 источников в одной ленте.
+• Отдельные сообщения по новым материалам, чтобы важные публикации не терялись среди сайтов и каналов.
+• Удобно собрать широкий круг изданий в одном окне и читать новости внутри Telegram.
 
 <b>Моя лента</b>
 Сначала издания из текущего топа, отмеченные ★. Затем остальные по числу новостей. Можно найти издание по названию или ссылке, если оно уже есть в боте.
 
-Оплата не закрывает бесплатные новости. Это не инвестиционная рекомендация и не прогноз цены.""",
+Оплата не закрывает бесплатные новости.""",
         "src_default": "Источник деловых новостей.",
         "help": """<b>Помощь</b>
 
@@ -191,13 +209,13 @@ Market News присылает деловые новости и короткую
 <b>Откуда новости</b>
 {sources}. Полный список — в «Моя лента».
 
-Это не инвестиционная рекомендация и не прогноз цен.""",
+""",
     },
     "en": {
         "tagline": "Daily market analytics",
         "today_head": "Today's top stories:",
         "updated": "Updated: {stamp} ({tz})",
-        "disclaimer": "Not investment advice.",
+        "disclaimer": "",
         "source": "Source",
         "topic": "Topic",
         "loading": "Collecting fresh market headlines. Today's stories will show up here in a few seconds.",
@@ -238,12 +256,27 @@ Market News присылает деловые новости и короткую
         "settings_push_off": "Delivery is off",
         "plus_active": "Plus is active until {until}",
         "plus_off": "No subscription is active. The digest, analytics and full text stay free.",
-        "plus_pitch": "One market feed in one place. Basic: 0 Stars, up to 5 sources and a daily digest. Plus: {plus_stars} Stars for 30 days, up to {plus_limit} sources, a new-story alert with minimal delay. Pro: {pro_stars} Stars, up to {pro_limit} sources, instant alerts.",
+        "plus_pitch": """One market feed instead of dozens of tabs.
+
+Basic — 0 Stars. Up to 5 sources, a daily digest, analytics and full story text inside the bot — a calm way to stay on top of the essentials.
+
+Plus — {plus_stars} Stars for 30 days. Up to {plus_limit} sources and a separate chat message for every new story from your selected feed as soon as the bot saves it. No waiting for the evening digest and no manual checking of websites.
+
+Pro — {pro_stars} Stars for 30 days. Up to {pro_limit} sources with the same story-by-story alerts for continuous monitoring. The wider coverage helps you follow several markets in one place and miss fewer important publications.""",
         "plus_thanks": "{plan} is active until {until}. The daily digest remains available.",
         "plus_invoice_title": "Market News {plan}",
         "plus_invoice_desc": "30 days: more sources and alerts for new stories.",
         "plans_title": "Market News plans",
-        "plans_text": "There are {catalog} sources for your language now.\n\nBasic — 0 Stars: up to 5 sources, daily digest.\n\nPlus — 200 Stars / 30 days: up to 100 sources, a new-story alert with minimal delay.\n\nPro — 500 Stars / 30 days: up to 500 sources, instant alerts.",
+        "plans_text": """There are {catalog} sources for your language now.
+
+Basic — 0 Stars
+For a daily overview: up to 5 selected sources, a daily digest, analytics and full story text inside the bot.
+
+Plus — 200 Stars / 30 days
+For people who follow markets during the day: up to 100 sources and a separate chat message for every new story from a selected feed as soon as the bot saves it. No waiting for the evening digest or checking dozens of websites by hand.
+
+Pro — 500 Stars / 30 days
+For continuous monitoring and broad coverage: up to 500 sources and separate messages for new stories. Bring several markets into one feed and reduce the chance of missing a publication from a less prominent source.""",
         "feed_title": "My feed",
         "feed_intro": "Headline publishers first (★), then the rest by story count. {enabled} of {limit} enabled.",
         "feed_page": "Page {page} of {pages}",
@@ -326,25 +359,28 @@ Market News присылает деловые новости и короткую
 Market News collects business news from {sources} and translates it into the interface language.
 
 <b>Free features</b>
-• Top stories and a daily digest.
+• Up to 5 selected sources and a daily digest of the essentials.
 • Analytics by stocks, oil, macro and crypto.
-• Story text inside the bot.
+• Headlines, summaries and full story text inside the bot.
 • Interface language and daily delivery time settings.
+This is enough if you want a quick, focused market overview once a day.
 
 <b>Plus subscription</b>
-200 Stars for 30 days.
-• Up to 100 sources in the feed.
-• A new-story alert with minimal delay.
+200 Stars for 30 days. For people who need new publications during the day.
+• Up to 100 sources in one personal feed.
+• A separate message for every new story from a selected source as soon as the bot saves it.
+• No waiting for the digest and no manual checking of dozens of websites.
 
 <b>Pro subscription</b>
-500 Stars for 30 days.
-• Up to 500 sources.
-• Instant alerts for new stories.
+500 Stars for 30 days. For continuous monitoring across several markets.
+• Up to 500 sources in one feed.
+• Separate messages for new stories, so important publications do not get lost across sites and channels.
+• Build broad coverage in one place and read the stories inside Telegram.
 
 <b>My feed</b>
 Headline publishers come first, marked ★. The rest follow by story count. You can find a publisher by name or link if it is already in the bot.
 
-Payment does not lock free news. This is not investment advice or a price forecast.""",
+Payment does not lock free news.""",
         "src_default": "A business news publisher.",
         "help": """<b>Help</b>
 
@@ -367,13 +403,13 @@ Once a day, at the hour you pick in settings. You can turn it off there.
 <b>Where the news comes from</b>
 {sources}. The full list is in My feed.
 
-This is not investment advice and not a price forecast.""",
+""",
     },
     "ar": {
         "tagline": "تحليل يومي للأسواق",
         "today_head": "أبرز أخبار اليوم:",
         "updated": "آخر تحديث: {stamp} ({tz})",
-        "disclaimer": "ليس نصيحة استثمارية.",
+        "disclaimer": "",
         "source": "المصدر",
         "topic": "الموضوع",
         "loading": "أجمع عناوين الأسواق الجديدة. ستظهر أخبار اليوم هنا خلال ثوانٍ.",
@@ -414,12 +450,27 @@ This is not investment advice and not a price forecast.""",
         "settings_push_off": "الإرسال متوقف",
         "plus_active": "Plus فعّال حتى {until}",
         "plus_off": "لا يوجد اشتراك فعّال. الموجز والتحليل والنص الكامل مجانية.",
-        "plus_pitch": "كل أخبار السوق في نافذة واحدة. الأساسي: 0 Stars، حتى 5 مصادر وموجز يومي. Plus: {plus_stars} Stars لمدة 30 يومًا، حتى {plus_limit} مصدرًا وتنبيه بخبر جديد بأقل تأخير. Pro: {pro_stars} Stars، حتى {pro_limit} مصدرًا وتنبيهات فورية.",
+        "plus_pitch": """نافذة واحدة لأخبار السوق بدلًا من عشرات علامات التبويب.
+
+الأساسي — 0 Stars. حتى 5 مصادر، وموجز يومي، وتحليل، والنص الكامل داخل البوت — طريقة هادئة لمعرفة أهم ما حدث.
+
+Plus — {plus_stars} Stars لمدة 30 يومًا. حتى {plus_limit} مصدرًا ورسالة منفصلة لكل خبر جديد من موجزك المختار فور حفظه في البوت. لا تنتظر الموجز المسائي ولا تراجع المواقع يدويًا.
+
+Pro — {pro_stars} Stars لمدة 30 يومًا. حتى {pro_limit} مصدرًا مع تنبيهات منفصلة لكل خبر لمتابعة مستمرة. التغطية الأوسع تساعدك على متابعة عدة أسواق في مكان واحد وتقليل احتمال تفويت الأخبار المهمة.""",
         "plus_thanks": "اشتراك {plan} فعّال حتى {until}. يبقى الموجز اليومي متاحًا.",
         "plus_invoice_title": "Market News {plan}",
         "plus_invoice_desc": "30 يومًا: مصادر أكثر وتنبيهات بالأخبار الجديدة.",
         "plans_title": "خطط Market News",
-        "plans_text": "يوجد الآن {catalog} مصدرًا للغتك.\n\nالأساسي — 0 Stars: حتى 5 مصادر وموجز يومي.\n\nPlus — 200 Stars / 30 يومًا: حتى 100 مصدر وتنبيه بخبر جديد بأقل تأخير.\n\nPro — 500 Stars / 30 يومًا: حتى 500 مصدر وتنبيهات فورية.",
+        "plans_text": """يوجد الآن {catalog} مصدرًا بلغتك.
+
+الأساسي — 0 Stars
+للمراجعة اليومية: حتى 5 مصادر مختارة، وموجز يومي، وتحليل، والنص الكامل داخل البوت.
+
+Plus — 200 Stars / 30 يومًا
+لمن يتابع الأسواق خلال اليوم: حتى 100 مصدر ورسالة منفصلة لكل خبر جديد من مصدر مختار فور حفظه في البوت. لا تنتظر الموجز المسائي ولا تفتح عشرات المواقع يدويًا.
+
+Pro — 500 Stars / 30 يومًا
+للمراقبة المستمرة والتغطية الواسعة: حتى 500 مصدر ورسائل منفصلة بالأخبار الجديدة. اجمع عدة أسواق في موجز واحد وقلل احتمال تفويت خبر من مصدر أقل شهرة.""",
         "feed_title": "موجزِي",
         "feed_intro": "ناشرو العناوين أولًا (★)، ثم الباقي بعدد الأخبار. مفعّل {enabled} من {limit}.",
         "feed_page": "صفحة {page} من {pages}",
@@ -502,25 +553,28 @@ This is not investment advice and not a price forecast.""",
 يجمع Market News أخبار الأعمال من {sources} ويترجمها إلى لغة الواجهة.
 
 <b>المزايا المجانية</b>
-• أهم الأخبار والموجز اليومي.
+• حتى 5 مصادر مختارة وموجز يومي لأهم الأخبار.
 • تحليل حسب الأسهم والنفط والاقتصاد الكلي والعملات الرقمية.
-• نص المواد داخل البوت.
+• العناوين والملخصات والنص الكامل داخل البوت.
 • اختيار اللغة ووقت الإرسال اليومي.
+هذا مناسب لمن يريد فهم أهم ما حدث في السوق مرة واحدة يوميًا.
 
 <b>اشتراك Plus</b>
-200 Stars لمدة 30 يومًا.
-• حتى 100 مصدر في الموجز.
-• تنبيه بخبر جديد بأقل تأخير.
+200 Stars لمدة 30 يومًا. لمن يحتاج إلى معرفة الأخبار الجديدة خلال اليوم.
+• حتى 100 مصدر في موجز شخصي واحد.
+• رسالة منفصلة لكل خبر جديد من مصدر مختار فور حفظه في البوت.
+• لا حاجة لانتظار الموجز أو مراجعة عشرات المواقع يدويًا.
 
 <b>اشتراك Pro</b>
-500 Stars لمدة 30 يومًا.
-• حتى 500 مصدر.
-• تنبيهات فورية بالأخبار الجديدة.
+500 Stars لمدة 30 يومًا. للمراقبة المستمرة لعدة أسواق.
+• حتى 500 مصدر في موجز واحد.
+• رسائل منفصلة بالأخبار الجديدة حتى لا تضيع المواد المهمة بين المواقع والقنوات.
+• اجمع تغطية واسعة في مكان واحد واقرأ الأخبار داخل Telegram.
 
 <b>موجزي</b>
 ناشرو العناوين أولًا بعلامة ★، ثم الباقي بعدد الأخبار. يمكن البحث بالاسم أو الرابط إذا كان المصدر موجودًا في البوت.
 
-الدفع لا يغلق الأخبار المجانية. هذا ليس نصيحة استثمارية ولا توقعًا للسعر.""",
+الدفع لا يغلق الأخبار المجانية.""",
         "src_default": "ناشر أخبار أعمال.",
         "help": """<b>مساعدة</b>
 
@@ -543,7 +597,7 @@ This is not investment advice and not a price forecast.""",
 <b>من أين تأتي الأخبار</b>
 {sources}. القائمة الكاملة في «موجزي».
 
-هذا ليس نصيحة استثمارية ولا توقعًا للأسعار.""",
+""",
     },
 }
 
@@ -570,20 +624,18 @@ TZ_LABELS = {
 
 ABOUT_RU = (
     "Market News собирает деловые новости с Reuters, BBC, CNBC, The Guardian, "
-    "Bloomberg, Yahoo Finance и тысяч других изданий. Дайджест раз в день, читать можно в боте. "
-    "Это не инвестиционный совет и не прогноз цен."
+    "Bloomberg, Yahoo Finance и тысяч других изданий. Дайджест раз в день, читать можно в боте."
 )
 ABOUT_EN = (
     "Market News collects business news from Reuters, BBC, CNBC, The Guardian, "
     "Bloomberg, Yahoo Finance and thousands of others. A digest arrives once a day "
-    "and can be read inside the bot. This is not investment advice and not a price forecast."
+    "and can be read inside the bot."
 )
 SHORT_RU = "Ежедневный дайджест рынков: новости и короткая сводка внутри бота."
 SHORT_EN = "A daily market digest: stories and a short brief inside the bot."
 ABOUT_AR = (
     "يجمع Market News أخبار الأعمال من Reuters وBBC وCNBC وThe Guardian "
-    "وBloomberg وYahoo Finance وآلاف غيرها. يصل الموجز مرة في اليوم ويمكن قراءته داخل البوت. "
-    "هذا ليس نصيحة استثمارية ولا توقعًا للأسعار."
+    "وBloomberg وYahoo Finance وآلاف غيرها. يصل الموجز مرة في اليوم ويمكن قراءته داخل البوت."
 )
 SHORT_AR = "موجز يومي للأسواق: أخبار وملخص قصير داخل البوت."
 
