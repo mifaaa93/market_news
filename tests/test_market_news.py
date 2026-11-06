@@ -25,6 +25,8 @@ from content import (
     render_digest,
     render_home,
     render_full,
+    render_plans,
+    render_plus,
     render_settings,
     resolve_category,
     title_norm,
@@ -158,6 +160,27 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(interface_lang("AR"), "ar")
         self.assertEqual(interface_lang("uk"), "ru")
         self.assertEqual(interface_lang(None), "ru")
+
+    def test_premium_pitch_uses_current_plan_limits_and_prices(self) -> None:
+        from content import render_how_it_works
+
+        with (
+            patch.object(config, "PLUS_STARS", 234),
+            patch.object(config, "PRO_STARS", 567),
+            patch.object(config, "PLUS_SOURCE_LIMIT", 101),
+            patch.object(config, "PRO_SOURCE_LIMIT", 501),
+        ):
+            for lang in ("ru", "en", "ar"):
+                user = _user(lang=lang)
+                for rendered in (
+                    render_plans(user, 409),
+                    render_plus(user),
+                    render_how_it_works(lang),
+                ):
+                    for value in ("234", "567", "101", "501"):
+                        self.assertIn(value, rendered)
+                    self.assertNotIn("{plus_", rendered)
+                    self.assertNotIn("{pro_", rendered)
 
     def test_clean_text_strips_links(self) -> None:
         raw = 'Brent moved higher. <a href="https://bit.ly/x">Read more</a> https://t.me/scam'

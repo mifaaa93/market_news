@@ -706,7 +706,14 @@ def render_help(lang: str, names: list[str] | None = None) -> str:
 
 
 def render_how_it_works(lang: str, names: list[str] | None = None) -> str:
-    return fit(fill(t(lang, "how_it_works"), sources=format_publishers(names, lang=lang)))
+    return fit(fill(
+        t(lang, "how_it_works"),
+        sources=format_publishers(names, lang=lang),
+        plus_stars=config.PLUS_STARS,
+        pro_stars=config.PRO_STARS,
+        plus_limit=config.PLUS_SOURCE_LIMIT,
+        pro_limit=config.PRO_SOURCE_LIMIT,
+    ))
 
 
 def render_sources(lang: str, blocks: list[tuple[str, str]], *, allow_link: bool, names: list[str] | None = None) -> str:
@@ -746,6 +753,7 @@ def render_plus(user: User) -> str:
         html.escape(
             fill(
                 t(lang, "plus_pitch"),
+                base_limit=str(config.BASE_SOURCE_LIMIT),
                 plus_stars=str(config.PLUS_STARS),
                 plus_limit=str(config.PLUS_SOURCE_LIMIT),
                 pro_stars=str(config.PRO_STARS),
@@ -760,7 +768,15 @@ def render_plans(user: User, catalog_count: int = 0) -> str:
     lines = [
         f"<b>{html.escape(t(user.lang, 'plans_title'))}</b>",
         "",
-        html.escape(fill(t(user.lang, "plans_text"), catalog=catalog_count)),
+        html.escape(fill(
+            t(user.lang, "plans_text"),
+            catalog=catalog_count,
+            base_limit=config.BASE_SOURCE_LIMIT,
+            plus_limit=config.PLUS_SOURCE_LIMIT,
+            pro_limit=config.PRO_SOURCE_LIMIT,
+            plus_stars=config.PLUS_STARS,
+            pro_stars=config.PRO_STARS,
+        )),
         "",
         html.escape(
             fill(
