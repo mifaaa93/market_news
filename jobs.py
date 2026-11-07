@@ -11,7 +11,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
 import config
-from content import digest_due, render_article, safe_zone, source_hash
+from content import digest_due, render_article, render_digest, safe_zone, source_hash
 from db import Database, utc_now, utc_now_iso
 from gnews import (
     UA,
